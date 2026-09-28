@@ -2,17 +2,21 @@
 
 _Last updated: 2026-09-28_
 
-**Current phase:** Phase 0 (inventory & baseline). Not started on hardware yet.
+**Current phase:** Phase 0 (inventory & baseline). **Nearly complete.**
 
 ## Done
-- Desk research on existing support (see FINDINGS F-001 … F-008).
-- Project plan (`PLAN.md`), repo skeleton, and memory system created.
+- Desk research on existing support (FINDINGS F-001 … F-008).
+- Project plan, repo skeleton, memory system.
+- Kodak Linux driver v4.14 downloaded (git-ignored `vendor/`) and inventoried: `re/linux-driver/inventory.md` (F-010 … F-016).
+- **USB descriptors collected from the owner's unit** on the Pi (`docs/hardware/hwinfo-20260928/`). The endpoint layout matches the vendor pipe map exactly (F-017, F-018). `docs/protocol/transport.md` updated.
+- The scan station is a Raspberry Pi 4 class board, aarch64, kernel 6.18 (F-019).
 
 ## Next actions
-1. `lsusb -v -d 040a:601d` → `docs/hardware/usb-descriptors.txt`.
-2. Download the Kodak Linux driver v4.14 (x86_64) + Windows v5.01 → `vendor/`; write inventories in `re/*/inventory.md`.
-3. Get a reference scan on x86 Linux and dump the vendor SANE options.
-4. Time-boxed Path A test: vendor driver under box64 on the Pi.
+1. **Owner:** firmware version (Kodak shows it in the driver or on the panel's diagnostic screen, if available) plus photos of the panel and back ports → `docs/hardware/`.
+2. Windows driver v5.1 inventory (needs 7z/innoextract; check the `.inf` for `usbscan.sys`, Q-002). Low priority.
+3. **Start Phase 1 on the Pi:** box64 + the vendor x86_64 driver, installed manually (ADR-006). If it works, the Pi also becomes the Phase 2 capture host via usbmon (Q-017), so no x86 machine is needed.
+4. Otherwise: an x86_64 reference machine or VM for the reference scan and SANE option dump.
+5. Write `tools/openusb-logger/` (ADR-005).
 
 ## Blockers
-- Need the physical scanner plus an x86 Linux machine (or a VM with USB passthrough).
+- None hard. Item 1 needs the owner; item 3 needs shell access on the Pi (the owner runs the prepared steps).

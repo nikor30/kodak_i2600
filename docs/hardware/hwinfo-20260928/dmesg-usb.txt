@@ -1,0 +1,37 @@
+$ sh -c dmesg | grep -iE 'usb|kodak|040a' | tail -n 80
+[    0.045489] usbcore: registered new interface driver usbfs
+[    0.045511] usbcore: registered new interface driver hub
+[    0.045535] usbcore: registered new device driver usb
+[    1.023194] usbcore: registered new interface driver lan78xx
+[    1.023223] usbcore: registered new interface driver smsc95xx
+[    1.113996] xhci_hcd 0000:01:00.0: new USB bus registered, assigned bus number 1
+[    1.115628] xhci_hcd 0000:01:00.0: new USB bus registered, assigned bus number 2
+[    1.115640] xhci_hcd 0000:01:00.0: Host supports USB 3.0 SuperSpeed
+[    1.115764] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.18
+[    1.115775] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    1.115783] usb usb1: Product: xHCI Host Controller
+[    1.115789] usb usb1: Manufacturer: Linux 6.18.50+rpt-rpi-v8 xhci-hcd
+[    1.115796] usb usb1: SerialNumber: 0000:01:00.0
+[    1.116082] hub 1-0:1.0: USB hub found
+[    1.116332] usb usb2: New USB device found, idVendor=1d6b, idProduct=0003, bcdDevice= 6.18
+[    1.116343] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    1.116350] usb usb2: Product: xHCI Host Controller
+[    1.116356] usb usb2: Manufacturer: Linux 6.18.50+rpt-rpi-v8 xhci-hcd
+[    1.116362] usb usb2: SerialNumber: 0000:01:00.0
+[    1.116541] hub 2-0:1.0: USB hub found
+[    1.117593] usbcore: registered new interface driver uas
+[    1.117634] usbcore: registered new interface driver usb-storage
+[    1.119757] usbcore: registered new interface driver usbhid
+[    1.119763] usbhid: USB HID core driver
+[    1.370639] usb 1-1: new high-speed USB device number 2 using xhci_hcd
+[    1.513257] usb 1-1: New USB device found, idVendor=2109, idProduct=3431, bcdDevice= 4.21
+[    1.513289] usb 1-1: New USB device strings: Mfr=0, Product=1, SerialNumber=0
+[    1.513297] usb 1-1: Product: USB2.0 Hub
+[    1.514775] hub 1-1:1.0: USB hub found
+[    1.803423] usb 1-1.4: new high-speed USB device number 3 using xhci_hcd
+[    1.896083] usb 1-1.4: New USB device found, idVendor=040a, idProduct=601d, bcdDevice= 2.01
+[    1.896125] usb 1-1.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[    1.896134] usb 1-1.4: Product: i2600 SCANNER
+[    1.896140] usb 1-1.4: Manufacturer: KODAK     
+[    1.896146] usb 1-1.4: SerialNumber: 0000000000000000
+[   16.750869] usbcore: registered new interface driver brcmfmac

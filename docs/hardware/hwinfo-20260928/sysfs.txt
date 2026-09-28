@@ -1,0 +1,23 @@
+sysfs: /sys/bus/usb/devices/1-1.4
+manufacturer         KODAK     
+product              i2600 SCANNER
+serial               0000000000000000
+version               2.00
+speed                480
+bMaxPower            2mA
+bcdDevice            0201
+bDeviceClass         ff
+bNumConfigurations   1
+bNumInterfaces        1
+busnum               1
+devnum               3
+--- interface /sys/bus/usb/devices/1-1.4/1-1.4:1.0
+  bInterfaceClass      ff
+  bInterfaceSubClass   ff
+  bInterfaceProtocol   ff
+  bNumEndpoints        05
+  ep_02 type=Bulk dir=out maxpkt=0200 interval=0ms
+  ep_81 type=Interrupt dir=in maxpkt=0008 interval=64ms
+  ep_82 type=Bulk dir=in maxpkt=0200 interval=0ms
+  ep_86 type=Bulk dir=in maxpkt=0200 interval=0ms
+  ep_88 type=Interrupt dir=in maxpkt=0008 interval=64ms
