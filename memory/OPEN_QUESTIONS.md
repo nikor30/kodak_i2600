@@ -11,7 +11,7 @@
 | Q-007 | Image transfer format: raw, JPEG, or proprietary; how is duplex interleaved? | Phase 2 | open (separate front/rear endpoints suggest no interleave, F-014) |
 | Q-008 | Firmware version of our unit; do protocol differences exist across firmware versions? | Phase 0 | open (bcdDevice 2.01 is known, F-018, but may not be the firmware version) |
 | Q-009 | USB IDs of the successors i2420/i2620/i2820, and do they share the protocol? | later | **closed**: `29cc:100a/b/c`, same driver and shared config (F-013) |
-| Q-010 | Does the i2600 have an accessory port, or do accessories only connect over their own USB? | Phase 0 | open (flatbeds have their own USB IDs, F-013) |
+| Q-010 | Does the i2600 have an accessory port, or do accessories only connect over their own USB? | Phase 0 | **closed**: back has only USB-B, power, switch (F-024); accessories use their own USB IDs (F-013) |
 | Q-011 | What are `lexexe`/`driverlexexe`/`osjit.so` ("lexicon")? Is any logic executed as a script/JIT? | Phase 3 | open |
 | Q-012 | Wire meaning of the `EOSUSBIOCTL` values used by `COsUsbImpl::Ioctl`/`BulkIOControl` | Phase 3 | open |
 | Q-013 | Is the "report inquiry" XML sent by the device, or built host-side? | Phase 2 | open |
@@ -21,3 +21,4 @@
 | Q-018 | Does qemu-user pass the usbfs ioctls (`USBDEVFS_SUBMITURB`/`REAPURB`, claim interface) that openusb's linux backend uses? | Phase 1 (`--diagnose --scan`) | partly answered: enumeration and descriptor reads work under qemu (F-022); bulk transfers still untested (the open failed earlier for an unrelated reason) |
 | Q-019 | Is scanning under qemu fast enough (hippo.so image processing is heavy)? Measure pages/min | Phase 1 | open |
 | Q-017 | Can the Pi itself serve as the capture host (box64 vendor driver + usbmon), removing the need for an x86 machine? | Phase 1 | open |
+| Q-020 | Why does opening hang under qemu (F-025)? A USB reset plus re-enumeration, an unsupported ioctl, or a netlink/udev wait? What do the LCD and the red Start LED show during the hang? | Phase 1 (`--trace-open`, `--snapshot`) | open |

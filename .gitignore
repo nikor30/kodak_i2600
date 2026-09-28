@@ -26,4 +26,5 @@ __pycache__/
 scans/
 
 # Phase 1 diagnostic output (review before committing selected files)
-pi/phase1/phase1-results-*
+pi/phase1/phase1-*/
+pi/phase1/phase1-*.tar.gz

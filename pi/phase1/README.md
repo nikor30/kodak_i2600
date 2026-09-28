@@ -39,6 +39,11 @@ sudo kodak-x86 scanimage -A                     # all options, including buttons
 sudo kodak-x86 umount                           # release the bind mounts
 ```
 
+## If something hangs
+- `05-scanimage-A` now gives up after 3 minutes.
+- While it hangs, open a **second terminal** and run `sudo ./setup-x86-chroot.sh --snapshot`. It records the process and thread states, kernel stacks, USB list, dmesg and Kodak logs (read-only).
+- `sudo ./setup-x86-chroot.sh --trace-open` opens the scanner once (`scanimage -A`, max 3 min) while recording qemu's syscall trace of the driver (`QEMU_STRACE`) and the raw USB traffic of the scanner's bus (usbmon text format). This shows resets/re-enumeration and the first real protocol bytes.
+
 ## If `sudo` says "unable to allocate pty"
 An earlier version of the script unmounted the host's `/dev/pts` through mount propagation (fixed, F-023). **Reboot the Pi** to restore it, then `git pull`.
 

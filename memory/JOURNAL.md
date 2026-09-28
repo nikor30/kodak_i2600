@@ -36,3 +36,8 @@
 - Fix: rslave on every bind mount, and rslave-before-umount (which also covers mounts from the old version). Verified: shared-tmpfs reproduction (old: submount lost; new: kept) plus a full setup→scanimage→umount cycle with the host /dev,/sys mount table unchanged.
 - Owner recovery: reboot the Pi (restores /dev/pts and any /sys submounts), then git pull and re-run.
 - Lesson: any script that bind-mounts host trees must use rslave; test mount code on a host with shared propagation.
+
+## 2026-09-28: second Pi run: hang at scanimage -A
+- Owner reports that `--diagnose` hangs at 05-scanimage-A (the open now gets further than the pango failure). Photos of the panel/back received (F-024, closes Q-010). Photos were not committed because they show a private document.
+- Added `--snapshot` (second-terminal, read-only state dump) and `--trace-open` (QEMU_STRACE syscall trace + usbmon text capture of the scanner bus during one `scanimage -A`), and cut the 05 timeout to 180 s. Fixed a pipefail exit when the scanner is absent. `.gitignore` covers all phase1-* outputs.
+- Hypothesis F-025 (reset + re-enumeration → stale handle); Q-020.

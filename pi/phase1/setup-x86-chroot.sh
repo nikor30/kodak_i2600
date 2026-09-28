@@ -11,6 +11,8 @@
 #   sudo ./setup-x86-chroot.sh               # build/refresh the chroot
 #   sudo ./setup-x86-chroot.sh --diagnose    # run tests, write a results tarball
 #   sudo ./setup-x86-chroot.sh --diagnose --scan   # also scan ONE page from the ADF
+#   sudo ./setup-x86-chroot.sh --snapshot     # 2nd terminal, while something hangs
+#   sudo ./setup-x86-chroot.sh --trace-open   # qemu syscall trace + usbmon of one open
 #
 # Env overrides: ROOT (default /opt/kodak-x86), SUITE (default bookworm),
 #   MIRROR, DRIVER_TGZ (path to an already downloaded driver tarball),
@@ -183,7 +185,7 @@ diagnose() {
   step 02-chroot-lsusb      "$0" --run lsusb -d "$VIDPID"
   step 03-deviceprobe       "$0" --run /usr/local/bin/deviceprobe_i2000
   T=600 step 04-scanimage-L "$0" --run env SANE_DEBUG_DLL=3 scanimage -L
-  T=600 step 05-scanimage-A "$0" --run scanimage -A
+  T=180 step 05-scanimage-A "$0" --run scanimage -A
   if [ "$do_scan" = "1" ]; then
     log "  06: scanning ONE page from the ADF (put one sheet in the feeder)"
     T=900 step 06-scan-gray300 "$0" --run sh -c \
@@ -196,11 +198,75 @@ diagnose() {
   log "Done. Please send: $out.tar.gz"
 }
 
+# Kodak logs + USB/kernel state, shared by --snapshot and --trace-open.
+collect_state() {
+  local out="$1"
+  lsusb >"$out/lsusb.txt" 2>&1 || true
+  dmesg 2>/dev/null | tail -n 80 >"$out/dmesg-tail.txt" || true
+  cp -r "$ROOT/var/kodak" "$out/var-kodak" 2>/dev/null || true
+}
+
+# --snapshot: run in a SECOND terminal while scanimage hangs. Read-only.
+snapshot() {
+  local out p t
+  out="$HERE/phase1-snapshot-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$out"
+  log "Snapshot → $out"
+  ps -eLo pid,tid,stat,wchan:32,etime,args | grep -E 'PID|scanimage|deviceprobe|pnphelper' | grep -v grep >"$out/ps-threads.txt" || true
+  for p in $(pgrep -f 'scanimage|deviceprobe' || true); do
+    {
+      echo "=== pid $p: $(tr '\0' ' ' </proc/"$p"/cmdline)"
+      grep -E 'State|Threads|VmRSS' /proc/"$p"/status
+      echo "--- kernel stack"; cat /proc/"$p"/stack 2>/dev/null
+      echo "--- open fds"; ls -l /proc/"$p"/fd 2>/dev/null
+      for t in /proc/"$p"/task/*; do
+        echo "--- thread ${t##*/} wchan=$(cat "$t"/wchan 2>/dev/null) syscall=$(cat "$t"/syscall 2>/dev/null)"
+      done
+    } >>"$out/processes.txt" 2>&1
+  done
+  collect_state "$out"
+  tar -C "$HERE" -czf "$out.tar.gz" "$(basename "$out")"
+  log "Done. Please send: $out.tar.gz"
+}
+
+# --trace-open: open the scanner once (scanimage -A, max 3 min) while
+# recording (a) qemu's syscall trace of the emulated driver and (b) the raw
+# USB traffic of the scanner's bus via usbmon. Sends nothing extra itself.
+trace_open() {
+  local out bus mpid=""
+  out="$HERE/phase1-trace-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$out"
+  log "Trace → $out (takes up to 3 minutes)"
+  bus="$(lsusb -d "$VIDPID" 2>/dev/null | awk '{print $2+0; exit}' || true)"
+  if [ -n "$bus" ]; then
+    modprobe usbmon 2>/dev/null || true
+    mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug 2>/dev/null || true
+    if [ -r "/sys/kernel/debug/usb/usbmon/${bus}u" ]; then
+      cat "/sys/kernel/debug/usb/usbmon/${bus}u" >"$out/usbmon-bus$bus.txt" & mpid=$!
+      log "  usbmon capturing bus $bus"
+    else
+      warn "usbmon not available; continuing without USB capture"
+    fi
+  else
+    warn "scanner $VIDPID not found on the host"
+  fi
+  dmesg 2>/dev/null >"$out/dmesg-before.txt" || true
+  { echo "start $(date +%T.%N)"
+    timeout 180 "$0" --run env QEMU_STRACE=1 scanimage -A >"$out/scanimage-A.txt" 2>"$out/qemu-strace.txt"
+    echo "exit=$? end $(date +%T.%N)"; } >"$out/run.txt" 2>&1 || true
+  [ -n "$mpid" ] && kill "$mpid" 2>/dev/null
+  dmesg 2>/dev/null >"$out/dmesg-after.txt" || true
+  diff "$out/dmesg-before.txt" "$out/dmesg-after.txt" >"$out/dmesg-new.txt" || true
+  collect_state "$out"
+  tar -C "$HERE" -czf "$out.tar.gz" "$(basename "$out")"
+  log "Done. Please send: $out.tar.gz"
+}
+
 # ------------------------------------------------------------------ main ----
 case "${1:-}" in
   --run)      shift; in_root "$@"; exit $? ;;
   --umount)   do_umount; exit 0 ;;
   --diagnose) diagnose "$([ "${2:-}" = "--scan" ] && echo 1 || echo 0)"; exit 0 ;;
+  --snapshot) snapshot; exit 0 ;;
+  --trace-open) trace_open; exit 0 ;;
   ""|--install)
     host_packages
     build_chroot
