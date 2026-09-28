@@ -145,9 +145,10 @@ What we know or assume about the i2600. Verify each item and record it in
 **Exit:** a working reference scan on x86, a file inventory of both drivers, and the USB descriptors recorded.
 
 ### Phase 1 (Path A): vendor driver on the Pi via emulation (≈1 week, time-boxed)
-- [ ] Pi 4/5, Raspberry Pi OS Lite **64-bit**, install `box64` (plus `box86` if only the 32-bit build works).
-- [ ] Install the x86_64 SANE stack and the Kodak `.so` files into an x86_64 sysroot. Run `scanimage` under box64.
-- [ ] Fallback: `qemu-user-static` + binfmt with a Debian amd64 chroot.
+Implementation: `pi/phase1/` (ADR-007). A Debian amd64 chroot plus qemu-user comes first because it is the most robust; box64 is the speed option.
+- [x] Script: `pi/phase1/setup-x86-chroot.sh` (chroot, safe merge of the vendor debs, `kodak-x86` helper, `--diagnose [--scan]`). Dry-run verified on x86_64.
+- [ ] Run on the Pi (Raspberry Pi OS 64-bit, Pi 4): detection (`scanimage -L`), option dump, one-page scan.
+- [ ] If qemu is too slow: box64 variant with the same x86 files.
 - [ ] Measure: pages/min, CPU, stability across 200-page batches, button readout via `scanimage -A`.
 
 **Exit:** either (a) reliable scanning on the Pi, which becomes the **interim production driver**, or (b) a documented failure reason. Either way, continue to Phase 2.
