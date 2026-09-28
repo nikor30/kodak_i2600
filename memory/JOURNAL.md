@@ -54,3 +54,9 @@
 - `--diagnose`: every step passes; `scanimage -A` takes 19 s. `--scan` with an empty feeder: "Document feeder out of documents" after 20 s, clean exit.
 - Closed Q-020. New Q-021 (bulk-OUT block), Q-022 (buttons not exposed via SANE). Results in `pi/phase1/phase1-trace-20260928-205802`, `phase1-results-20260928-205858`, `-205941` (git-ignored).
 - Next: real page scan with a sheet loaded.
+
+## 2026-09-28: first successful scan on the Pi
+- Owner loaded a sheet. The first attempt still said "out of documents" (USB trace: control-pipe status polling only, no feed). Owner then confirmed LED solid green, LCD `1`, paper loaded, and the retry **scanned**: 52 s, 20 MB raw per side over EP 0x82/0x86, 2476×3503 gray TIFF (F-029).
+- Bug in `--diagnose --scan`: `--batch-count` puts scanimage in batch mode, so stdout stays empty and the image lands in `out1.tif` in the chroot's cwd, and only 1 of the 2 duplex images is kept. Fixed: explicit `--batch=/tmp/scan-gray300-%d.tiff --duplex both`.
+- Saved image is almost white, so it is probably the blank side; to be re-checked with a printed page.
+- Noticed bcdDevice 1.02 → 2.01 across the first open's 5.7 MB bulk-OUT: probably a runtime firmware load on each power-up (F-030, Q-021).

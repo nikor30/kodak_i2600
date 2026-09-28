@@ -227,10 +227,13 @@ diagnose() {
   T=600 step 04-scanimage-L "$0" --run env SANE_DEBUG_DLL=3 scanimage -L
   T=180 step 05-scanimage-A "$0" --run scanimage -A
   if [ "$do_scan" = "1" ]; then
-    log "  06: scanning ONE page from the ADF (put one sheet in the feeder)"
+    log "  06: scanning ONE sheet, both sides, from the ADF (put one sheet in the feeder)"
+    rm -f "$ROOT"/tmp/scan-gray300-*.tiff
+    # --batch writes one file per image (a duplex sheet gives two); scanimage
+    # ignores stdout in batch mode, so the file pattern must be explicit.
     T=900 step 06-scan-gray300 "$0" --run sh -c \
-      'scanimage --mode Gray --resolution 300 --batch-count=1 --format=tiff > /tmp/scan-gray300.tiff; ls -l /tmp/scan-gray300.tiff; file /tmp/scan-gray300.tiff'
-    cp "$ROOT/tmp/scan-gray300.tiff" "$out/" 2>/dev/null || true
+      'scanimage --mode Gray --resolution 300 --duplex both --format=tiff --batch=/tmp/scan-gray300-%d.tiff; ls -l /tmp/scan-gray300-*.tiff; file /tmp/scan-gray300-*.tiff'
+    cp "$ROOT"/tmp/scan-gray300-*.tiff "$out/" 2>/dev/null || true
   fi
   cp -r "$ROOT/var/kodak" "$out/var-kodak" 2>/dev/null || true
   dmesg 2>/dev/null | tail -n 60 >"$out/dmesg-tail.txt" || true
