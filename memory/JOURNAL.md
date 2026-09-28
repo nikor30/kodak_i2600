@@ -72,3 +72,8 @@
 - Next: scan speed under box64 (needs paper), check whether lexexe/hippo children run under box64 or fall back to qemu.
 - Follow-up: the box64 open failed at random. Cause: stale link_map entries after kds.ds dlclose/dlopen cycles (F-033). Extended the patch; now stable.
 - **box64 scan: 3 duplex sheets in 27 s including the open, vs qemu 2 sheets in 80 s (F-034).** Image stats identical to qemu for the same sheets.
+
+## 2026-09-28: Phase 5 scan station (first version)
+- Owner's choices: REST API, color 300 dpi duplex, auto-start on paper. Design ADR-010.
+- Feasibility: saned under box64 plus python3-sane via the net backend works; NO_DOCS polling is instant (F-035).
+- Wrote `pi/scan-station/` (kodak_scand.py, units, install.sh, config example, README). Installed on the Pi; both services active, polling, ~0.5 % CPU idle. Upload not tested yet (no Paperless URL/token).
