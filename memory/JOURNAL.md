@@ -12,3 +12,9 @@
 - New ADRs: ADR-005 (libopenusb logging shim), ADR-006 (never run the vendor installer on targets).
 - Added `tools/phase0/collect-hw-info.sh`, `docs/protocol/transport.md`, `docs/hardware/lsusb.txt`.
 - Not done: Windows driver inventory (no 7z/innoextract in this environment).
+
+## 2026-09-28: USB descriptors from the real unit
+- Owner ran `tools/phase0/collect-hw-info.sh` on the Pi (`scannstation`, aarch64, kernel 6.18.50+rpt-rpi-v8). Output committed to `docs/hardware/hwinfo-20260928/`.
+- 5 endpoints: 0x02 bulk OUT, 0x82/0x86 bulk IN, 0x81/0x88 interrupt IN (8 B, 64 ms). This matches the vendor pipe map one-to-one (F-017); closes Q-001.
+- bcdDevice 2.01; USB serial all zeros (F-018). No kernel driver binds (vendor class), so userspace access via usbfs is clean.
+- Idea: if box64 runs the vendor driver on the Pi, the Pi is also the capture host (Q-017).
