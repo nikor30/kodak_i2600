@@ -24,3 +24,9 @@
 - Incident: `dpkg-deb -x libudev0.deb /` replaced the container's `/lib` symlink with a directory (F-021). The container is disposable; a safety check blocked the repair (`rmdir /lib`), so it was left as is. The Pi recipe avoids this with a staged tar merge.
 - Wrote `pi/phase1/setup-x86-chroot.sh` + README (ADR-007): bookworm amd64 chroot, safe merge, SANE limited to kds_i2000, `kodak-x86` helper, `--diagnose [--scan]` results tarball. Verified end to end on x86_64: builds, idempotent, `/lib` intact, mounts released.
 - Next: owner runs it on the Pi.
+
+## 2026-09-28: first Pi run of Phase 1
+- Owner ran setup + `--diagnose` + `--diagnose --scan` on the Pi 4 (trixie). Chroot, qemu binfmt, USB visibility and Kodak device enumeration all work; `scanimage -L` finds the scanner (F-022).
+- Open/scan failed: `devicemanager.so` needs libpango/libpangocairo, which were missing in the minbase chroot (the x86 dry run had them on the host, so it did not catch this).
+- Fix: chroot now installs pango/cairo/glib + xdg-user-dirs; new `check_deps` (ldd over every Kodak lib) runs at setup (fatal) and in `--diagnose` (`00-deps.txt`). Verified on x86: the check flags the gap, and after the fix the open gets past `Data->Init` to device discovery.
+- dmesg showed two USB disconnect/re-enumerations of the scanner around the test (cause unknown: replug, or a reset by the driver). Watch for it in the next run.

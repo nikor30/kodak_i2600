@@ -79,7 +79,26 @@ build_chroot() {
   log "Installing SANE tools inside the chroot"
   in_root apt-get update -qq
   in_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    sane-utils libsane1 usbutils strace file procps
+    sane-utils libsane1 usbutils strace file procps xdg-user-dirs \
+    libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libglib2.0-0
+}
+
+# Every Kodak library must resolve inside the chroot. device.so dlopen()s
+# devicemanager.so (pango/cairo); a missing dep only shows up at open time as
+# "open of device kds_i2000:i2000 failed: Invalid argument" (first Pi run, F-022).
+check_deps() {
+  log "Checking shared-library dependencies of the Kodak files"
+  local missing
+  # libuic_*.so report libpthread.so.0 "not found" under ldd although it loads
+  # fine via hippo.so; that ldd quirk is filtered out.
+  missing="$(in_root sh -c 'for f in /opt/kodak/kds_i2000/lib/*.so /usr/local/lib/twain/kodak/kds_i2000/kds.ds \
+      /usr/lib/sane/libsane-kds_i2000.so.1.0.24 /usr/local/lib/libopenusb.so /usr/local/lib/openusb_backend/linux.so; do
+      LD_LIBRARY_PATH=/opt/kodak/kds_i2000/lib ldd "$f" 2>/dev/null | grep "not found" | grep -v libpthread.so.0 | sed "s|^|$f: |"; done' || true)"
+  if [ -n "$missing" ]; then
+    warn "missing libraries:"; printf '%s\n' "$missing" >&2
+    return 1
+  fi
+  log "  all Kodak libraries resolve"
 }
 
 # ---------------------------------------------------------- kodak driver ----
@@ -149,6 +168,7 @@ diagnose() {
   cat /proc/sys/fs/binfmt_misc/qemu-x86_64 >>"$out/binfmt.txt" 2>&1 || true
   lsusb -d "$VIDPID" >"$out/host-lsusb.txt" 2>&1 || true
 
+  check_deps >"$out/00-deps.txt" 2>&1 || true
   step 01-chroot-uname      "$0" --run uname -m
   step 02-chroot-lsusb      "$0" --run lsusb -d "$VIDPID"
   step 03-deviceprobe       "$0" --run /usr/local/bin/deviceprobe_i2000
@@ -175,6 +195,7 @@ case "${1:-}" in
     host_packages
     build_chroot
     install_kodak
+    check_deps || die "fix the missing libraries above, then re-run"
     install_wrapper
     log "Setup complete. Next: sudo $0 --diagnose   (add --scan to scan one page)"
     ;;
