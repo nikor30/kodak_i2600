@@ -25,3 +25,8 @@ Format: ID, date, context, decision, consequences. Never delete; supersede with 
 ## ADR-006: Vendor installer is not run on target systems (2026-09-28)
 - **Context:** postinst edits `50-udev-default.rules`, sets MODE 666 udev rules, and runs `chmod -R 777 /var/kodak`.
 - **Decision:** on the Pi and on reference machines, unpack the `.deb` files manually and install our own minimal udev rule. Use a VM or a throw-away install if the vendor `setup` is ever needed.
+
+## ADR-007: Phase 1 uses a Debian amd64 chroot + qemu-user first, box64 second (2026-09-28)
+- **Context:** the vendor stack hard-codes absolute paths (`/opt/kodak`, `/usr/local/lib/twain`, `/usr/local/lib/libopenusb.so`, `/var/kodak`) and needs a full x86 SANE userland. Box64 running from the host would need those paths on the Pi's root filesystem plus a mixed-arch library setup.
+- **Decision:** build an isolated `/opt/kodak-x86` bookworm amd64 chroot (debootstrap) run via qemu-user binfmt. Vendor debs are merged safely (F-021). The chroot SANE loads only `kds_i2000`. Box64 is tried only if qemu is too slow.
+- **Consequences:** easy to undo (delete the directory); slower than box64. In Phase 5, native tools can reach it via an x86 `saned` on localhost plus the SANE `net` backend.

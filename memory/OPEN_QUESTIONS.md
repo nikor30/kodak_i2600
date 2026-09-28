@@ -18,4 +18,6 @@
 | Q-014 | Is the Mono `twaingui.exe` needed for headless SANE scanning? | Phase 1 | open |
 | Q-015 | Is EP0 (control) used for vendor requests, or only bulk/interrupt? | Phase 2 | open |
 | Q-016 | Which of the interrupt endpoints `0x81`/`0x88` carries button/panel events, and what is the 8-byte format? | Phase 2 | open |
+| Q-018 | Does qemu-user pass the usbfs ioctls (`USBDEVFS_SUBMITURB`/`REAPURB`, claim interface) that openusb's linux backend uses? | Phase 1 (`--diagnose --scan`) | open |
+| Q-019 | Is scanning under qemu fast enough (hippo.so image processing is heavy)? Measure pages/min | Phase 1 | open |
 | Q-017 | Can the Pi itself serve as the capture host (box64 vendor driver + usbmon), removing the need for an x86 machine? | Phase 1 | open |
