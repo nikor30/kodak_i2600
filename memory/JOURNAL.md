@@ -60,3 +60,7 @@
 - Bug in `--diagnose --scan`: `--batch-count` puts scanimage in batch mode, so stdout stays empty and the image lands in `out1.tif` in the chroot's cwd, and only 1 of the 2 duplex images is kept. Fixed: explicit `--batch=/tmp/scan-gray300-%d.tiff --duplex both`.
 - Saved image is almost white, so it is probably the blank side; to be re-checked with a printed page.
 - Noticed bcdDevice 1.02 → 2.01 across the first open's 5.7 MB bulk-OUT: probably a runtime firmware load on each power-up (F-030, Q-021).
+
+## 2026-09-28: duplex batch scan verified
+- With the fixed `--diagnose --scan`: 2 printed sheets → 4 gray 300 dpi TIFFs (3 with content, 1 blank back) in 80 s including the open, ≈30 s/sheet (F-031). Phase 1's exit criterion (vendor driver scans on the Pi) is met with qemu; speed is modest but usable.
+- Images stay local (git-ignored results dir).
