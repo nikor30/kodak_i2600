@@ -30,3 +30,8 @@ Format: ID, date, context, decision, consequences. Never delete; supersede with 
 - **Context:** the vendor stack hard-codes absolute paths (`/opt/kodak`, `/usr/local/lib/twain`, `/usr/local/lib/libopenusb.so`, `/var/kodak`) and needs a full x86 SANE userland. Box64 running from the host would need those paths on the Pi's root filesystem plus a mixed-arch library setup.
 - **Decision:** build an isolated `/opt/kodak-x86` bookworm amd64 chroot (debootstrap) run via qemu-user binfmt. Vendor debs are merged safely (F-021). The chroot SANE loads only `kds_i2000`. Box64 is tried only if qemu is too slow.
 - **Consequences:** easy to undo (delete the directory); slower than box64. In Phase 5, native tools can reach it via an x86 `saned` on localhost plus the SANE `net` backend.
+
+## ADR-008: Fake x86 /proc/cpuinfo inside the chroot (2026-09-28)
+- **Context:** under qemu-user the vendor's image-processing helper (hippo.so via lexexe) hangs after parsing the host's ARM /proc/cpuinfo (F-026).
+- **Decision:** the chroot's own procfs gets an x86-style cpuinfo (one entry per host CPU, `cpu MHz: 1800`, physical/core ids, SSE4.2-level flags), bind-mounted over `$ROOT/proc/cpuinfo` only. It is removed with the chroot's `/proc` on umount.
+- **Consequences:** the host is unaffected. If hippo also uses CPUID to choose AVX code paths, qemu's CPU model decides that, not this file.

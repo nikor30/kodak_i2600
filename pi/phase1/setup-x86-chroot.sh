@@ -43,9 +43,49 @@ fi
 # on them then propagates and unmounts the HOST's /dev/pts, /sys/fs/cgroup, …
 # (first Pi run: "sudo: unable to allocate pty"; F-023).
 is_mounted() { mountpoint -q "$ROOT/$1"; }
+# Under qemu-user, x86 code reads the host's ARM /proc/cpuinfo. Kodak's
+# hippo.so (image processing helper, run by lexexe) spins forever after
+# parsing it: it looks for x86 fields like "cpu MHz" / "physical id" (F-026).
+# Give the chroot an x86-style cpuinfo, bind-mounted over the chroot's own
+# /proc/cpuinfo only; the host's /proc is untouched.
+fake_cpuinfo() {
+  local f="$ROOT/etc/kodak-x86-cpuinfo" n i
+  n="$(nproc 2>/dev/null || echo 4)"
+  : >"$f"
+  for ((i = 0; i < n; i++)); do
+    cat >>"$f" <<EOF
+processor	: $i
+vendor_id	: GenuineIntel
+cpu family	: 6
+model		: 85
+model name	: Intel(R) Xeon(R) CPU (kodak-x86 chroot, emulated)
+stepping	: 7
+cpu MHz		: 1800.000
+cache size	: 1024 KB
+physical id	: 0
+siblings	: $n
+core id		: $i
+cpu cores	: $n
+apicid		: $i
+fpu		: yes
+fpu_exception	: yes
+cpuid level	: 13
+wp		: yes
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx lm constant_tsc nopl pni ssse3 cx16 sse4_1 sse4_2 popcnt lahf_lm
+bogomips	: 3600.00
+clflush size	: 64
+cache_alignment	: 64
+address sizes	: 40 bits physical, 48 bits virtual
+
+EOF
+  done
+  echo "$f"
+}
+cpuinfo_bound() { grep -q " $ROOT/proc/cpuinfo " /proc/self/mountinfo; }
 do_mount() {
   mkdir -p "$ROOT"/{proc,sys,dev,run/udev}
   is_mounted proc     || mount -t proc proc "$ROOT/proc"
+  cpuinfo_bound       || mount --bind "$(fake_cpuinfo)" "$ROOT/proc/cpuinfo"
   is_mounted sys      || { mount --rbind /sys "$ROOT/sys" && mount --make-rslave "$ROOT/sys"; }
   is_mounted dev      || { mount --rbind /dev "$ROOT/dev" && mount --make-rslave "$ROOT/dev"; }
   if [ -d /run/udev ]; then
@@ -157,7 +197,7 @@ install_wrapper() {
 # Run a command inside the Kodak x86 chroot ($ROOT). "kodak-x86 umount" releases the mounts.
 set -euo pipefail
 ROOT="$ROOT"
-$(declare -f is_mounted do_mount do_umount)
+$(declare -f is_mounted fake_cpuinfo cpuinfo_bound do_mount do_umount)
 if [ "\${1:-}" = "umount" ]; then do_umount; exit 0; fi
 do_mount
 exec chroot "\$ROOT" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root \\

@@ -10,7 +10,7 @@ Phase 0 is done except for the firmware version and photos.
 - Phase 1: `pi/phase1/setup-x86-chroot.sh` + README. Dry-run verified on x86_64 (F-020); safe deb merge (F-021, ADR-007).
 
 ## Next actions
-1. **Owner (on the Pi):** `git pull`; power-cycle the scanner; run `--trace-open` and send the tarball (a `--snapshot` from a second terminal during a hang also helps). Also: what does the LCD show while the Start LED is red? (Q-020)
+1. **Owner (on the Pi):** `git pull`; `pkill -f kds_i2000/lib/lexexe`; power-cycle the scanner; re-run `./setup-x86-chroot.sh` (installs the fake-cpuinfo helper), then `--trace-open`; if it no longer hangs: `--diagnose --scan`.
 2. Evaluate: detection (Q-018), speed (Q-019), and the option list → `docs/protocol/sane-options-vendor.md`.
 3. If qemu fails or is too slow: box64 variant.
 4. Pending from Phase 0: firmware version, panel/port photos; Windows driver inventory (low priority).

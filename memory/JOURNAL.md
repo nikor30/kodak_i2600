@@ -41,3 +41,8 @@
 - Owner reports that `--diagnose` hangs at 05-scanimage-A (the open now gets further than the pango failure). Photos of the panel/back received (F-024, closes Q-010). Photos were not committed because they show a private document.
 - Added `--snapshot` (second-terminal, read-only state dump) and `--trace-open` (QEMU_STRACE syscall trace + usbmon text capture of the scanner bus during one `scanimage -A`), and cut the 05 timeout to 180 s. Fixed a pipefail exit when the scanner is absent. `.gitignore` covers all phase1-* outputs.
 - Hypothesis F-025 (reset + re-enumeration → stale handle); Q-020.
+
+## 2026-09-28: trace of the open hang
+- `--trace-open` from the Pi: exit 124 after 180 s, usbmon empty, no dmesg change. The driver spawns lexexe+hippo.so over POSIX mqueues; hippo spins right after reading the ARM /proc/cpuinfo (F-026). Disassembly: `CTimingInfo::ComputeProcessorClockSpeed()` busy-waits on `clock_gettime` (ruled out: no clock_gettime syscalls in the trace); the cpuinfo readers are `COsCfgImpl::LoadSystemInfo()` and `boost::thread::physical_concurrency()`.
+- Fix under test (ADR-008): fake x86 cpuinfo bind-mounted inside the chroot. Verified on x86: the chroot sees it, the host cpuinfo is untouched, and umount is clean.
+- Owner should kill leftover spinning `lexexe` processes from earlier hung runs (timeout only kills scanimage).
