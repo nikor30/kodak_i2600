@@ -77,3 +77,4 @@
 - Owner's choices: REST API, color 300 dpi duplex, auto-start on paper. Design ADR-010.
 - Feasibility: saned under box64 plus python3-sane via the net backend works; NO_DOCS polling is instant (F-035).
 - Wrote `pi/scan-station/` (kodak_scand.py, units, install.sh, config example, README). Installed on the Pi; both services active, polling, ~0.5 % CPU idle. Upload not tested yet (no Paperless URL/token).
+- Owner gave the Paperless address `http://192.168.10.242:8000` (the DNS name `paperless.niko.de` → 192.168.100.11 was unreachable from the Pi's WLAN) and the token (stored in /etc/kodak-scan/paperless-token, 600). The 3 spooled stacks uploaded at once (F-036). The token user can't read tags/tasks/documents (403).

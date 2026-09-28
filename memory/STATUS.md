@@ -2,7 +2,7 @@
 
 _Last updated: 2026-09-28_
 
-**Current phase:** Phase 5 (scan station). `pi/scan-station/` installed on the Pi: kodak-saned + kodak-scand run and poll for paper (ADR-010). **Waiting for: Paperless URL/token from the owner, then an end-to-end test with paper.**
+**Current phase:** Phase 5 (scan station). `pi/scan-station/` installed on the Pi: kodak-saned + kodak-scand run and poll for paper (ADR-010). **End-to-end works: paper → PDF → Paperless upload accepted (F-036).** Open: owner confirms the documents in the Paperless UI; token user lacks view permissions (tags/tasks).
 Phase 0 is done except for the firmware version and photos.
 
 ## Done
@@ -11,7 +11,7 @@ Phase 0 is done except for the firmware version and photos.
 - Phase 1 on the Pi: the fake cpuinfo (ADR-008) fixes the open hang. Detection, open (19–34 s), option dump, and bulk USB I/O all work under qemu (F-027, F-028). Empty-feeder scan fails cleanly with "out of documents".
 
 ## Next actions
-0. Owner: set `paperless.url` in `/etc/kodak-scan/config.yaml`, put the token into `/etc/kodak-scan/paperless-token`, then load paper → check the PDF in Paperless (the exit criterion: < 60 s, survives an outage).
+0. Owner: check the 3 uploaded "Scan 2026-09-28 22:3x" documents in Paperless. If tags per profile are wanted, give the token's user view permission on tags (or use tag ids). Test the outage case (stop Paperless → scan → start → auto-upload).
 1. Owner: visually check the 4 TIFFs in `pi/phase1/phase1-results-20260928-210749/` (orientation, sharpness, cropping).
 2. Use box64 as the emulator for the scan daemon (Phase 5: saned/scan script → Paperless consume). Consider sending the box64 patch upstream (ptitSeb/box64).
 3. Write the option list → `docs/protocol/sane-options-vendor.md` (from `05-scanimage-A.txt`).

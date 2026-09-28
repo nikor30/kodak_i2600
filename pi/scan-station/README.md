@@ -27,6 +27,11 @@ sudo systemctl restart kodak-scand
 journalctl -u kodak-scand -f
 ```
 
+## Paperless permissions
+Uploading only needs the "add document" permission. **Tag names** in a profile are
+resolved via `/api/tags/`, so the token's user also needs **view** permission on tags
+(otherwise use tag ids). The uploaded documents belong to the token's user.
+
 ## Use
 - Put the stack into the feeder. Within about 2 s the scanner starts pulling it in.
 - One stack becomes one PDF. Blank sides are dropped by the driver (`blankimagemode: content`).
