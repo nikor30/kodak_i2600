@@ -18,7 +18,7 @@
 | Q-014 | Is the Mono `twaingui.exe` needed for headless SANE scanning? | Phase 1 | open |
 | Q-015 | Is EP0 (control) used for vendor requests, or only bulk/interrupt? | Phase 2 | open |
 | Q-016 | Which of the interrupt endpoints `0x81`/`0x88` carries button/panel events, and what is the 8-byte format? | Phase 2 | open |
-| Q-018 | Does qemu-user pass the usbfs ioctls (`USBDEVFS_SUBMITURB`/`REAPURB`, claim interface) that openusb's linux backend uses? | Phase 1 (`--diagnose --scan`) | answered for control + bulk: ~5.7 MB bulk OUT and bulk IN on both image pipes go through qemu (F-028); a real page scan is still untested |
+| Q-018 | Does qemu-user pass the usbfs ioctls (`USBDEVFS_SUBMITURB`/`REAPURB`, claim interface) that openusb's linux backend uses? | Phase 1 (`--diagnose --scan`) | **closed**: control + bulk work under qemu and box64; full scans succeed (F-029, F-034). Originally: ~5.7 MB bulk OUT and bulk IN on both image pipes go through qemu (F-028); a real page scan is still untested |
 | Q-019 | Is scanning under qemu fast enough (hippo.so image processing is heavy)? Measure pages/min | Phase 1 | **answered**: box64 is ≈10× faster than qemu. 3 duplex sheets in 27 s including a ~15 s open (F-034). Color not measured yet |
 | Q-017 | Can the Pi itself serve as the capture host (box64 vendor driver + usbmon), removing the need for an x86 machine? | Phase 1 | open |
 | Q-020 | Why does opening hang under qemu (F-025)? A USB reset plus re-enumeration, an unsupported ioctl, or a netlink/udev wait? What do the LCD and the red Start LED show during the hang? | Phase 1 (`--trace-open`, `--snapshot`) | **closed**: hippo spun after parsing the ARM /proc/cpuinfo (F-026); the fake x86 cpuinfo fixes it (F-027). LCD `0` + red LED meaning still unknown |
