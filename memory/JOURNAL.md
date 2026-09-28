@@ -70,3 +70,5 @@
 - `deviceprobe` worked at once; `scanimage -L`/`-A` segfaulted. Root cause: the vendor code treats dlopen handles as `struct link_map*` (F-032). Wrote a box64 patch (`box64-dlopen-null-linkmap.patch`) → open works, 14.7 s vs 19 s under qemu.
 - Also: `gh` 2.46 installed on the Pi from Debian (owner request; needs `gh auth login`).
 - Next: scan speed under box64 (needs paper), check whether lexexe/hippo children run under box64 or fall back to qemu.
+- Follow-up: the box64 open failed at random. Cause: stale link_map entries after kds.ds dlclose/dlopen cycles (F-033). Extended the patch; now stable.
+- **box64 scan: 3 duplex sheets in 27 s including the open, vs qemu 2 sheets in 80 s (F-034).** Image stats identical to qemu for the same sheets.

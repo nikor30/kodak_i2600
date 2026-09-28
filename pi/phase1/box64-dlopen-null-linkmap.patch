@@ -11,6 +11,30 @@ index fe9660d..f2af165 100644
              lm->l_ld = GetLoadedDynamicSection(lib->e.elf);
          }
          //TODO: it seems to never be removed!
+diff --git a/src/librarian/library.c b/src/librarian/library.c
+index 32b2f4a..48ac27f 100644
+--- a/src/librarian/library.c
++++ b/src/librarian/library.c
+@@ -650,6 +650,10 @@ void Free1Library(library_t **the_lib, x64emu_t* emu)
+     printf_dlsym_dump(LOG_DEBUG, "Free1Library %s\n", lib->name?:"???");
+     // remove lib from maplib/local_maplib...
+     if(my_context) {
++        // drop its link_map too: a stale entry with the same l_name would be
++        // found first by programs that walk the chain after a dlclose/dlopen cycle
++        if(!box64_is32bits)
++            removeLinkMapLib(lib);
+         MapLibRemoveLib(my_context->maplib, lib);
+         MapLibRemoveLib(my_context->local_maplib, lib);
+     }
+@@ -1278,6 +1282,8 @@ void removeLinkMapLib(library_t* lib)
+         lm->l_next->l_prev = lm->l_prev;
+     if(lm->l_prev)
+         lm->l_prev->l_next = lm->l_next;
++    if(my_context->linkmap == lm)
++        my_context->linkmap = lm->l_next;
+     actual_free(lm);
+ }
+ 
 diff --git a/src/wrapped/wrappedlibdl.c b/src/wrapped/wrappedlibdl.c
 index c9c521e..d6a6040 100644
 --- a/src/wrapped/wrappedlibdl.c
