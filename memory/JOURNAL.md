@@ -46,3 +46,11 @@
 - `--trace-open` from the Pi: exit 124 after 180 s, usbmon empty, no dmesg change. The driver spawns lexexe+hippo.so over POSIX mqueues; hippo spins right after reading the ARM /proc/cpuinfo (F-026). Disassembly: `CTimingInfo::ComputeProcessorClockSpeed()` busy-waits on `clock_gettime` (ruled out: no clock_gettime syscalls in the trace); the cpuinfo readers are `COsCfgImpl::LoadSystemInfo()` and `boost::thread::physical_concurrency()`.
 - Fix under test (ADR-008): fake x86 cpuinfo bind-mounted inside the chroot. Verified on x86: the chroot sees it, the host cpuinfo is untouched, and umount is clean.
 - Owner should kill leftover spinning `lexexe` processes from earlier hung runs (timeout only kills scanimage).
+
+## 2026-09-28: fake cpuinfo verified on the Pi (open hang fixed)
+- Ran directly on the Pi this time (Claude session on `scannstation`). No leftover lexexe processes. Re-ran setup (it installed the fake-cpuinfo mount), then `--trace-open`, `--diagnose`, and `--diagnose --scan`.
+- `--trace-open`: `scanimage -A` exit 0 after 34 s (was: hang until the 180 s timeout). Full option list, 17 options, no button/panel options (F-027).
+- usbmon: first real protocol traffic. ~5.7 MB bulk OUT on EP 0x02 during open, then 53,856 B IN on each image pipe 0x82/0x86 (F-028, Q-021). qemu passes bulk URBs (Q-018).
+- `--diagnose`: every step passes; `scanimage -A` takes 19 s. `--scan` with an empty feeder: "Document feeder out of documents" after 20 s, clean exit.
+- Closed Q-020. New Q-021 (bulk-OUT block), Q-022 (buttons not exposed via SANE). Results in `pi/phase1/phase1-trace-20260928-205802`, `phase1-results-20260928-205858`, `-205941` (git-ignored).
+- Next: real page scan with a sheet loaded.

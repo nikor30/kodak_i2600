@@ -44,7 +44,7 @@ sudo kodak-x86 umount                           # release the bind mounts
 - While it hangs, open a **second terminal** and run `sudo ./setup-x86-chroot.sh --snapshot`. It records the process and thread states, kernel stacks, USB list, dmesg and Kodak logs (read-only).
 - `sudo ./setup-x86-chroot.sh --trace-open` opens the scanner once (`scanimage -A`, max 3 min) while recording qemu's syscall trace of the driver (`QEMU_STRACE`) and the raw USB traffic of the scanner's bus (usbmon text format). This shows resets/re-enumeration and the first real protocol bytes.
 
-### Known cause of the open hang (fixed, ADR-008)
+### Known cause of the open hang (fixed and verified on the Pi, ADR-008, F-027)
 Kodak's image-processing helper (`lexexe` → `hippo.so`) spins forever after reading the Pi's **ARM** `/proc/cpuinfo`. The chroot now gets an x86-style `/proc/cpuinfo` (bind mount inside the chroot only). Leftover helpers from earlier hung runs keep one core busy: `sudo pkill -f kds_i2000/lib/lexexe`.
 
 ## If `sudo` says "unable to allocate pty"
