@@ -39,6 +39,9 @@ sudo kodak-x86 scanimage -A                     # all options, including buttons
 sudo kodak-x86 umount                           # release the bind mounts
 ```
 
+## If `sudo` says "unable to allocate pty"
+An earlier version of the script unmounted the host's `/dev/pts` through mount propagation (fixed, F-023). **Reboot the Pi** to restore it, then `git pull`.
+
 ## Undo everything
 ```bash
 sudo kodak-x86 umount

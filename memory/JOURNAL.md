@@ -30,3 +30,9 @@
 - Open/scan failed: `devicemanager.so` needs libpango/libpangocairo, which were missing in the minbase chroot (the x86 dry run had them on the host, so it did not catch this).
 - Fix: chroot now installs pango/cairo/glib + xdg-user-dirs; new `check_deps` (ldd over every Kodak lib) runs at setup (fatal) and in `--diagnose` (`00-deps.txt`). Verified on x86: the check flags the gap, and after the fix the open gets past `Data->Init` to device discovery.
 - dmesg showed two USB disconnect/re-enumerations of the scanner around the test (cause unknown: replug, or a reset by the driver). Watch for it in the next run.
+
+## 2026-09-28: mount propagation bug (host /dev/pts lost)
+- Owner: `sudo ./setup-x86-chroot.sh` → "sudo: unable to allocate pty: No such device". Cause: my `kodak-x86 umount` (`umount -R` on rbind mounts) propagated to the host's shared mounts (F-023).
+- Fix: rslave on every bind mount, and rslave-before-umount (which also covers mounts from the old version). Verified: shared-tmpfs reproduction (old: submount lost; new: kept) plus a full setup→scanimage→umount cycle with the host /dev,/sys mount table unchanged.
+- Owner recovery: reboot the Pi (restores /dev/pts and any /sys submounts), then git pull and re-run.
+- Lesson: any script that bind-mounts host trees must use rslave; test mount code on a host with shared propagation.

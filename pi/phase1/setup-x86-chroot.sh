@@ -36,18 +36,28 @@ if [ "$ARCH" != "aarch64" ] && [ "${ALLOW_NON_ARM:-0}" != "1" ]; then
 fi
 
 # ---------------------------------------------------------------- mounts ----
+# The bind mounts MUST be rslave. With systemd, / is mounted "shared", so a
+# plain --rbind makes the chroot's dev/sys peers of the host's: `umount -R`
+# on them then propagates and unmounts the HOST's /dev/pts, /sys/fs/cgroup, …
+# (first Pi run: "sudo: unable to allocate pty"; F-023).
 is_mounted() { mountpoint -q "$ROOT/$1"; }
 do_mount() {
   mkdir -p "$ROOT"/{proc,sys,dev,run/udev}
   is_mounted proc     || mount -t proc proc "$ROOT/proc"
-  is_mounted sys      || mount --rbind /sys "$ROOT/sys"
-  is_mounted dev      || mount --rbind /dev "$ROOT/dev"
-  if [ -d /run/udev ]; then is_mounted run/udev || mount --bind /run/udev "$ROOT/run/udev"; fi
+  is_mounted sys      || { mount --rbind /sys "$ROOT/sys" && mount --make-rslave "$ROOT/sys"; }
+  is_mounted dev      || { mount --rbind /dev "$ROOT/dev" && mount --make-rslave "$ROOT/dev"; }
+  if [ -d /run/udev ]; then
+    is_mounted run/udev || { mount --bind /run/udev "$ROOT/run/udev" && mount --make-rslave "$ROOT/run/udev"; }
+  fi
 }
 do_umount() {
   local m
   for m in run/udev dev sys proc; do
-    if [ -d "$ROOT/$m" ] && is_mounted "$m"; then umount -R "$ROOT/$m" || umount -lR "$ROOT/$m"; fi
+    if [ -d "$ROOT/$m" ] && is_mounted "$m"; then
+      # Cut propagation first (this also protects mounts made by older versions).
+      mount --make-rslave "$ROOT/$m" || { echo "refusing to unmount $ROOT/$m: cannot make it rslave" >&2; return 1; }
+      umount -R "$ROOT/$m" || umount -lR "$ROOT/$m"
+    fi
   done
 }
 in_root() { do_mount; chroot "$ROOT" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root "$@"; }
