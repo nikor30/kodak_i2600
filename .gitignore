@@ -1,0 +1,26 @@
+# Vendor drivers, installers, firmware: never commit
+vendor/*
+!vendor/README.md
+*.exe
+*.msi
+*.iso
+*.cab
+*.deb
+*.rpm
+*.tar.gz
+
+# Ghidra/IDA databases can embed vendor code
+*.gpr
+*.rep/
+*.idb
+*.i64
+
+# Build output
+build/
+*.o
+*.so
+__pycache__/
+*.pyc
+
+# Local scan output
+scans/
