@@ -1,0 +1,2 @@
+# Provided by the project owner, 2026-09-28 (plain `lsusb`)
+Bus 001 Device 003: ID 040a:601d Kodak Co. i2600 SCANNER

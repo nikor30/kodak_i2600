@@ -156,11 +156,11 @@ What we know or assume about the i2600. Verify each item and record it in
 Least-effort, highest-yield techniques first:
 1. **`usbmon` + Wireshark** on the x86 Linux reference machine while running scripted scans (`captures/`).
    One capture per variable: resolution, colour mode, simplex/duplex, paper size, compression, button presses, panel function change, error states (jam, open cover, multifeed).
-2. **LD_PRELOAD interposer** (`tools/libusb-logger/`) around `libusb_bulk_transfer` / `libusb_control_transfer` / `libusb_interrupt_transfer` (or `ioctl(USBDEVFS_*)` if the driver doesn't use libusb). This logs requests with *call-site* context, which links the traffic to the vendor function names.
+2. **libopenusb logging shim** (`tools/openusb-logger/`, ADR-005). The vendor driver `dlopen`s `/usr/local/lib{,64}/libopenusb.so` (not libusb, F-012), so a drop-in library at that path logs every `openusb_*_xfer` with pipe and endpoint context and forwards to the real library.
 3. **Windows side** (only for features missing on Linux): USBPcap + Wireshark, API Monitor on `DeviceIoControl`/`ReadFile`/`WriteFile` to the `usbscan` handle.
 4. Write `tools/decode/`: a pcap → annotated command log decoder, later a **Wireshark Lua dissector**.
 
-Working hypothesis to test first: the transport is **SCSI-style command blocks over USB bulk** (a CDB out, data in/out, status in). This is common to Kodak/Fujitsu/Canon document scanners and would line up with the upstream `sane-kodak` command set (compare `backend/kodak-cmd.h` in sane-backends). Related `canon_dr`/`fujitsu` backends are good structural templates.
+Known from Phase 0 (F-014): separate pipes for commands (EP2 OUT), front image (EP2 IN), rear image (EP6 IN) and two interrupt/event pipes (EP1, EP8). The driver binaries contain no SCSI strings (F-016), so the next hypothesis is now **unlikely**; it is kept only as a reference. Original hypothesis: the transport is **SCSI-style command blocks over USB bulk** (a CDB out, data in/out, status in). This is common to Kodak/Fujitsu/Canon document scanners and would line up with the upstream `sane-kodak` command set (compare `backend/kodak-cmd.h` in sane-backends). Related `canon_dr`/`fujitsu` backends are good structural templates.
 
 **Exit:** `docs/protocol/` describes the transport framing, INQUIRY/identify, set-window/parameters, start scan, read image data (format, compression, duplex interleave), end/cancel, sense/error codes, button/panel status.
 
