@@ -35,3 +35,8 @@ Format: ID, date, context, decision, consequences. Never delete; supersede with 
 - **Context:** under qemu-user the vendor's image-processing helper (hippo.so via lexexe) hangs after parsing the host's ARM /proc/cpuinfo (F-026).
 - **Decision:** the chroot's own procfs gets an x86-style cpuinfo (one entry per host CPU, `cpu MHz: 1800`, physical/core ids, SSE4.2-level flags), bind-mounted over `$ROOT/proc/cpuinfo` only. It is removed with the chroot's `/proc` on umount.
 - **Consequences:** the host is unaffected. If hippo also uses CPUID to choose AVX code paths, qemu's CPU model decides that, not this file.
+
+## ADR-009: box64 built from source, installed into the Kodak chroot (2026-09-28)
+- **Context:** qemu-user works but is slow (≈30 s per duplex sheet, ~20 s open, F-031). The owner chose to try box64 for speed before building the Paperless pipeline. Debian trixie's box64 0.3.4 needs glibc ≥ 2.39; the Kodak chroot is bookworm (2.36), and moving the chroot to trixie risks breaking the vendor libs.
+- **Decision:** `pi/phase1/setup-box64.sh` builds upstream box64 (pinned tag, `-DRPI4ARM64=1`) in a separate, disposable native arm64 bookworm chroot (`/opt/box64-build`), then installs the binary into `/opt/kodak-x86/usr/local/bin/box64` and adds `libc6:arm64` etc. to the Kodak chroot via multiarch. Use it with `kodak-x86 box64 <cmd>`; plain `kodak-x86 <cmd>` still uses qemu.
+- **Consequences:** the host stays untouched (only the two /opt dirs). Both paths coexist, so we can A/B them. Child processes the driver spawns (deviceprobe, lexexe) may still fall back to qemu via binfmt unless box64 intercepts the execve; check this in the first run.

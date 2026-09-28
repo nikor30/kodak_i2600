@@ -64,3 +64,9 @@
 ## 2026-09-28: duplex batch scan verified
 - With the fixed `--diagnose --scan`: 2 printed sheets → 4 gray 300 dpi TIFFs (3 with content, 1 blank back) in 80 s including the open, ≈30 s/sheet (F-031). Phase 1's exit criterion (vendor driver scans on the Pi) is met with qemu; speed is modest but usable.
 - Images stay local (git-ignored results dir).
+
+## 2026-09-28: box64 port (owner chose "speed first")
+- Debian trixie's box64 needs glibc 2.39 > bookworm's 2.36, so it's built from upstream v0.4.4 in a throw-away arm64 bookworm chroot (`setup-box64.sh`, ADR-009) and installed into the Kodak chroot with arm64 multiarch runtime libs. `EMU=box64 ./setup-x86-chroot.sh --diagnose` runs the same tests under box64; results dirs are now `phase1-results-<qemu|box64>-*`.
+- `deviceprobe` worked at once; `scanimage -L`/`-A` segfaulted. Root cause: the vendor code treats dlopen handles as `struct link_map*` (F-032). Wrote a box64 patch (`box64-dlopen-null-linkmap.patch`) → open works, 14.7 s vs 19 s under qemu.
+- Also: `gh` 2.46 installed on the Pi from Debian (owner request; needs `gh auth login`).
+- Next: scan speed under box64 (needs paper), check whether lexexe/hippo children run under box64 or fall back to qemu.

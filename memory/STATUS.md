@@ -2,7 +2,7 @@
 
 _Last updated: 2026-09-28_
 
-**Current phase:** Phase 1 (vendor driver on the Pi via emulation). **Phase 1 goal reached: the vendor driver scans duplex batches on the Pi under qemu (F-031), ≈2 sheets/min at gray 300 dpi.**
+**Current phase:** Phase 1 (vendor driver on the Pi via emulation). **Phase 1 goal reached with qemu (F-031). Now: box64 for speed (ADR-009). Open works under box64 after a box64 patch (F-032); scan speed not measured yet.**
 Phase 0 is done except for the firmware version and photos.
 
 ## Done
@@ -12,7 +12,7 @@ Phase 0 is done except for the firmware version and photos.
 
 ## Next actions
 1. Owner: visually check the 4 TIFFs in `pi/phase1/phase1-results-20260928-210749/` (orientation, sharpness, cropping).
-2. Decide the interim path (ADR): qemu chroot + x86 `saned` on localhost → Phase 5 scan daemon + Paperless upload, or try box64 for speed first.
+2. box64: `sudo EMU=box64 ./setup-x86-chroot.sh --diagnose --scan` with sheets loaded → compare with qemu (F-031). Then choose the emulator for the scan daemon (Phase 5).
 3. Write the option list → `docs/protocol/sane-options-vendor.md` (from `05-scanimage-A.txt`).
 4. Buttons/LCD: the vendor SANE backend exposes none (Q-022). Look for another route (TWAIN/kds.ds events), or plan them for the native backend (the interrupt EPs 0x81/0x88).
 5. If qemu is too slow: box64 variant.
