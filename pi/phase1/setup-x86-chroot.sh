@@ -13,6 +13,7 @@
 #   sudo ./setup-x86-chroot.sh --diagnose --scan   # also scan ONE page from the ADF
 #   sudo ./setup-x86-chroot.sh --snapshot     # 2nd terminal, while something hangs
 #   sudo ./setup-x86-chroot.sh --trace-open   # qemu syscall trace + usbmon of one open
+#   sudo EMU=box64 ./setup-x86-chroot.sh --diagnose [--scan]   # same tests under box64 (setup-box64.sh)
 #
 # Env overrides: ROOT (default /opt/kodak-x86), SUITE (default bookworm),
 #   MIRROR, DRIVER_TGZ (path to an already downloaded driver tarball),
@@ -210,9 +211,15 @@ EOF
 diagnose() {
   local do_scan="$1" out ts
   ts="$(date +%Y%m%d-%H%M%S)"
-  out="$HERE/phase1-results-$ts"
+  out="$HERE/phase1-results-${EMU:-qemu}-$ts"
   mkdir -p "$out"
-  log "Diagnostics → $out"
+  # EMU=box64 runs the x86 programs under box64 instead of qemu (ADR-009).
+  local X=()
+  if [ "${EMU:-qemu}" = "box64" ]; then
+    [ -x "$ROOT/usr/local/bin/box64" ] || die "box64 not installed: run setup-box64.sh"
+    X=(/usr/local/bin/box64)
+  fi
+  log "Diagnostics (${EMU:-qemu}) → $out"
   step() { local name="$1"; shift; log "  $name"; { echo "\$ $*"; /usr/bin/time -v timeout "${T:-300}" "$@"; echo "exit=$?"; } >"$out/$name.txt" 2>&1 || true; }
 
   { uname -a; echo; cat /etc/os-release; echo; nproc; free -m; } >"$out/host.txt" 2>&1
@@ -223,14 +230,17 @@ diagnose() {
   check_deps >"$out/00-deps.txt" 2>&1 || true
   step 01-chroot-uname      "$0" --run uname -m
   step 02-chroot-lsusb      "$0" --run lsusb -d "$VIDPID"
-  step 03-deviceprobe       "$0" --run /usr/local/bin/deviceprobe_i2000
-  T=600 step 04-scanimage-L "$0" --run env SANE_DEBUG_DLL=3 scanimage -L
-  T=180 step 05-scanimage-A "$0" --run scanimage -A
+  step 03-deviceprobe       "$0" --run "${X[@]}" /usr/local/bin/deviceprobe_i2000
+  T=600 step 04-scanimage-L "$0" --run env SANE_DEBUG_DLL=3 "${X[@]}" /usr/bin/scanimage -L
+  T=180 step 05-scanimage-A "$0" --run "${X[@]}" /usr/bin/scanimage -A
   if [ "$do_scan" = "1" ]; then
-    log "  06: scanning ONE page from the ADF (put one sheet in the feeder)"
+    log "  06: scanning ONE sheet, both sides, from the ADF (put one sheet in the feeder)"
+    rm -f "$ROOT"/tmp/scan-gray300-*.tiff
+    # --batch writes one file per image (a duplex sheet gives two); scanimage
+    # ignores stdout in batch mode, so the file pattern must be explicit.
     T=900 step 06-scan-gray300 "$0" --run sh -c \
-      'scanimage --mode Gray --resolution 300 --batch-count=1 --format=tiff > /tmp/scan-gray300.tiff; ls -l /tmp/scan-gray300.tiff; file /tmp/scan-gray300.tiff'
-    cp "$ROOT/tmp/scan-gray300.tiff" "$out/" 2>/dev/null || true
+      "${X[*]} /usr/bin/scanimage --mode Gray --resolution 300 --duplex both --format=tiff --batch=/tmp/scan-gray300-%d.tiff; ls -l /tmp/scan-gray300-*.tiff; file /tmp/scan-gray300-*.tiff"
+    cp "$ROOT"/tmp/scan-gray300-*.tiff "$out/" 2>/dev/null || true
   fi
   cp -r "$ROOT/var/kodak" "$out/var-kodak" 2>/dev/null || true
   dmesg 2>/dev/null | tail -n 60 >"$out/dmesg-tail.txt" || true

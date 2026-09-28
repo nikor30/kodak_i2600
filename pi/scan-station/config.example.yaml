@@ -1,0 +1,34 @@
+# /etc/kodak-scan/config.yaml: kodak-scand (Kodak i2600 → Paperless-ngx)
+# The API token does NOT go here: put it into /etc/kodak-scan/paperless-token
+# (mode 600, root). systemd hands it to the service (LoadCredential).
+
+device: net:127.0.0.1:kds_i2000:i2000   # SANE device (saned in the Kodak chroot)
+poll_interval: 2                         # seconds between "paper in the feeder?" checks
+spool_dir: /var/lib/kodak-scan           # work/ outbox/ sent/ failed/
+keep_sent_days: 7                        # keep uploaded PDFs locally this long
+
+profile: color300                        # active profile
+profiles:
+  color300:
+    sane:                                # SANE options as listed by `scanimage -A`, applied in this order
+      mode: Color
+      resolution: 300
+      duplex: both
+      blankimagemode: content            # the driver drops blank sides …
+      blankimagecontent: 1               # … with at most 1 % content
+      # imagerotateorthogonal: auto      # driver auto-rotation (try it, then enable)
+    image_format: jpeg                   # jpeg | png  (lineart is always TIFF G4)
+    jpeg_quality: 85
+    title: "Scan {created:%Y-%m-%d %H:%M}"
+    tags: []                             # Paperless tag names or ids; names must exist
+  gray300:
+    sane: {mode: Gray, resolution: 300, duplex: both, blankimagemode: content, blankimagecontent: 1}
+    title: "Scan {created:%Y-%m-%d %H:%M}"
+  bw300:
+    sane: {mode: Lineart, resolution: 300, duplex: both, blankimagemode: content, blankimagecontent: 1}
+    title: "Scan {created:%Y-%m-%d %H:%M}"
+
+paperless:
+  url: http://paperless.example:8000     # base URL, without /api
+  timeout: 300                           # seconds per upload
+  retry_interval: 60                     # seconds between retries while Paperless is unreachable

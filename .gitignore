@@ -28,3 +28,4 @@ scans/
 # Phase 1 diagnostic output (review before committing selected files)
 pi/phase1/phase1-*/
 pi/phase1/phase1-*.tar.gz
+pi/phase1/*.log

@@ -27,7 +27,7 @@ sudo ./setup-x86-chroot.sh --diagnose      # detection tests, no scanning
 sudo ./setup-x86-chroot.sh --diagnose --scan   # also scans ONE sheet: put one page in the feeder first
 ```
 
-Each `--diagnose` writes `phase1-results-<timestamp>.tar.gz` next to the
+Each `--diagnose` writes `phase1-results-<qemu|box64>-<timestamp>.tar.gz` next to the
 script. **Send that file back.** It contains the command outputs, timings,
 the Kodak logs from `/var/kodak`, and (with `--scan`) the scanned TIFF.
 The tarball is git-ignored, so check what's inside before committing any of it.
@@ -44,7 +44,7 @@ sudo kodak-x86 umount                           # release the bind mounts
 - While it hangs, open a **second terminal** and run `sudo ./setup-x86-chroot.sh --snapshot`. It records the process and thread states, kernel stacks, USB list, dmesg and Kodak logs (read-only).
 - `sudo ./setup-x86-chroot.sh --trace-open` opens the scanner once (`scanimage -A`, max 3 min) while recording qemu's syscall trace of the driver (`QEMU_STRACE`) and the raw USB traffic of the scanner's bus (usbmon text format). This shows resets/re-enumeration and the first real protocol bytes.
 
-### Known cause of the open hang (fixed, ADR-008)
+### Known cause of the open hang (fixed and verified on the Pi, ADR-008, F-027)
 Kodak's image-processing helper (`lexexe` → `hippo.so`) spins forever after reading the Pi's **ARM** `/proc/cpuinfo`. The chroot now gets an x86-style `/proc/cpuinfo` (bind mount inside the chroot only). Leftover helpers from earlier hung runs keep one core busy: `sudo pkill -f kds_i2000/lib/lexexe`.
 
 ## If `sudo` says "unable to allocate pty"
@@ -75,6 +75,17 @@ the bind-mounted `/dev` or `/sys` can be touched.)
 - SANE loads `kds_i2000` → `libtwaindsm` → `kds.ds`; device discovery spawns `deviceprobe_i2000` → `libopenusb` → `openusb_backend/linux.so`.
 - With no device: `deviceprobe` prints `@END@`, and `scanimage -L` finds 0 devices (expected).
 - **Not yet verified:** anything under qemu on aarch64, and any real USB I/O.
+
+## box64 (faster alternative to qemu, ADR-009)
+```bash
+sudo ./setup-box64.sh                           # builds box64 from source (~20-40 min), installs it into the chroot
+sudo kodak-x86 box64 /usr/bin/scanimage -L      # box64 instead of qemu
+sudo EMU=box64 ./setup-x86-chroot.sh --diagnose --scan   # the same tests under box64
+sudo ./setup-box64.sh --clean                   # delete the build chroot (/opt/box64-build) afterwards
+```
+Debian's box64 package needs glibc ≥ 2.39 and the chroot is bookworm (2.36),
+so box64 is built in a separate throw-away arm64 bookworm chroot. The Kodak
+chroot gains `libc6:arm64` & co. through multiarch. The qemu path keeps working.
 
 ## If it fails / next options
 - qemu too slow or USB ioctls unsupported → **box64** variant (a dynarec, much faster; needs the same x86 files, run from the host with box64).

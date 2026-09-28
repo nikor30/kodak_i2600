@@ -1,0 +1,136 @@
+diff --git a/src/librarian/librarian.c b/src/librarian/librarian.c
+index fe9660d..f2af165 100644
+--- a/src/librarian/librarian.c
++++ b/src/librarian/librarian.c
+@@ -278,7 +278,7 @@ static int AddNeededLib_add(lib_t** maplib, int local, needed_libs_t* needed, in
+                 return 1;
+             }
+             lm->l_addr = (Elf64_Addr)GetElfDelta(lib->e.elf);
+-            lm->l_name = lib->name;
++            lm->l_name = lib->path?lib->path:lib->name;   // glibc: the path it was loaded from
+             lm->l_ld = GetLoadedDynamicSection(lib->e.elf);
+         }
+         //TODO: it seems to never be removed!
+diff --git a/src/librarian/library.c b/src/librarian/library.c
+index 32b2f4a..48ac27f 100644
+--- a/src/librarian/library.c
++++ b/src/librarian/library.c
+@@ -650,6 +650,10 @@ void Free1Library(library_t **the_lib, x64emu_t* emu)
+     printf_dlsym_dump(LOG_DEBUG, "Free1Library %s\n", lib->name?:"???");
+     // remove lib from maplib/local_maplib...
+     if(my_context) {
++        // drop its link_map too: a stale entry with the same l_name would be
++        // found first by programs that walk the chain after a dlclose/dlopen cycle
++        if(!box64_is32bits)
++            removeLinkMapLib(lib);
+         MapLibRemoveLib(my_context->maplib, lib);
+         MapLibRemoveLib(my_context->local_maplib, lib);
+     }
+@@ -1278,6 +1282,8 @@ void removeLinkMapLib(library_t* lib)
+         lm->l_next->l_prev = lm->l_prev;
+     if(lm->l_prev)
+         lm->l_prev->l_next = lm->l_next;
++    if(my_context->linkmap == lm)
++        my_context->linkmap = lm->l_next;
+     actual_free(lm);
+ }
+ 
+diff --git a/src/wrapped/wrappedlibdl.c b/src/wrapped/wrappedlibdl.c
+index c9c521e..d6a6040 100644
+--- a/src/wrapped/wrappedlibdl.c
++++ b/src/wrapped/wrappedlibdl.c
+@@ -80,11 +80,48 @@ void dl_set_error(const char* msg)
+ 
+ #define SET_ERROR(M, ...) do { snprintf(dl->last_msg, ERROR_LEN, M, __VA_ARGS__); dl->is_error=1; } while(0)
+ 
++// glibc's dlopen() handle *is* the library's struct link_map, and some
++// programs rely on it: they walk ((struct link_map*)dlopen(NULL, ...))->l_next
++// to find their own module and then pass that link_map to dlsym() (the Kodak
++// i2000 scanner driver does this). So dlopen(NULL) returns the main program's
++// link_map, and any link_map from the chain is accepted as a handle.
++static size_t dl_find_idx(dlprivate_t *dl, linkmap_t* lm)
++{
++    for (size_t i=MIN_NLIB; i<dl->lib_sz; ++i)
++        if(dl->dllibs[i].full && (lm->l_lib?(dl->dllibs[i].lib==lm->l_lib):dl->dllibs[i].is_self))
++            return i+1;
++    return 0;
++}
++void* my_dlopen(x64emu_t* emu, void *filename, int flag);
++static size_t dl_handle2nlib(void* handle)
++{
++    dlprivate_t *dl = my_context->dlprivate;
++    if(!handle || !dl)
++        return (size_t)handle;
++    linkmap_t* lm = my_context->linkmap;
++    while(lm && (void*)lm!=handle)
++        lm = lm->l_next;
++    if(!lm)
++        return (size_t)handle;   // a regular index handle
++    size_t idx = dl_find_idx(dl, lm);
++    if(!idx) {
++        // loaded as a dependency and never dlopen()ed: register it (RTLD_NOLOAD|RTLD_LAZY)
++        my_dlopen(thread_get_emu(), lm->l_lib?lm->l_lib->path:NULL, lm->l_lib?0x5:0x1);
++        idx = dl_find_idx(dl, lm);
++    }
++    return idx?idx:(size_t)handle;
++}
++static void* dl_self_handle(void* idx_handle)
++{
++    linkmap_t* lm = getLinkMapLib(NULL);    // main program
++    return lm?(void*)lm:idx_handle;
++}
++
+ library_t* dl_get_library(void* handle)
+ {
+     dlprivate_t *dl = my_context->dlprivate;
+     CLEARERR;
+-    size_t nlib = (size_t)handle;
++    size_t nlib = dl_handle2nlib(handle);
+     --nlib;
+     // size_t is unsigned
+     if(nlib>=dl->lib_sz) {
+@@ -257,7 +294,7 @@ void* my_dlopen(x64emu_t* emu, void *filename, int flag)
+         for (size_t i=MIN_NLIB; i<dl->lib_sz; ++i) {
+             if(dl->dllibs[i].is_self) {
+                 ++dl->dllibs[i].count;
+-                return (void*)(i+1);
++                return dl_self_handle((void*)(i+1));
+             }
+         }
+         printf_dlsym(LOG_DEBUG, "Call to dlopen(NULL, %X)\n", flag);
+@@ -280,7 +317,7 @@ void* my_dlopen(x64emu_t* emu, void *filename, int flag)
+     dl->dllibs[idx].full = 1;
+     SetDlOpenIdx(lib, idx);
+     printf_dlsym(LOG_DEBUG, "dlopen: New handle %p (%s), dlopened=%ld\n", (void*)(idx+1), (char*)filename, dlopened);
+-    return (void*)(idx+1);
++    return lib?(void*)(idx+1):dl_self_handle((void*)(idx+1));
+ }
+ void* my_dlmopen(x64emu_t* emu, void* lmid, void *filename, int flag)
+ {
+@@ -387,7 +424,7 @@ void* my_dlsym_internal(x64emu_t* emu, void *handle, void *symbol, int version,
+         pthread_mutex_unlock(&mutex);
+         return NULL;
+     }
+-    size_t nlib = (size_t)handle;
++    size_t nlib = dl_handle2nlib(handle);
+     --nlib;
+     // size_t is unsigned
+     if(nlib>=dl->lib_sz) {
+@@ -482,7 +519,7 @@ int my_dlclose(x64emu_t* emu, void *handle)
+     printf_dlsym(LOG_DEBUG, "Call to dlclose(%p)\n", handle);
+     dlprivate_t *dl = my_context->dlprivate;
+     CLEARERR;
+-    size_t nlib = (size_t)handle;
++    size_t nlib = dl_handle2nlib(handle);
+     --nlib;
+     // size_t is unsigned
+     if(nlib>=dl->lib_sz) {
+@@ -545,7 +582,7 @@ int my_dlinfo(x64emu_t* emu, void* handle, int request, void* info)
+     printf_dlsym(LOG_DEBUG, "Call to dlinfo(%p, %d, %p)\n", handle, request, info);
+     dlprivate_t *dl = my_context->dlprivate;
+     CLEARERR;
+-    size_t nlib = (size_t)handle;
++    size_t nlib = dl_handle2nlib(handle);
+     --nlib;
+     // size_t is unsigned
+     if(nlib>=dl->lib_sz) {

@@ -1,0 +1,15 @@
+[Unit]
+Description=saned for the Kodak i2600 (vendor x86_64 driver under box64, localhost only)
+Documentation=file:///usr/local/lib/kodak-scan/README.md
+
+[Service]
+# kodak-x86 bind-mounts /dev,/proc,/sys into /opt/kodak-x86 and chroots there.
+ExecStart=/usr/local/sbin/kodak-x86 /usr/bin/env BOX64_LOG=0 BOX64_NOBANNER=1 \
+  /usr/local/bin/box64 /usr/sbin/saned -l -b 127.0.0.1 -p 6566
+ExecStopPost=/usr/local/sbin/kodak-x86 umount
+KillMode=control-group
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

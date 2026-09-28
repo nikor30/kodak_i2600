@@ -1,0 +1,25 @@
+[Unit]
+Description=Kodak i2600 scan station: auto-scan into Paperless-ngx
+Documentation=file:///usr/local/lib/kodak-scan/README.md
+Requires=kodak-saned.service
+After=kodak-saned.service network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/kodak-scan/kodak_scand.py --config /etc/kodak-scan/config.yaml
+Environment=SANE_CONFIG_DIR=/usr/local/lib/kodak-scan/sane.d
+Environment=PYTHONUNBUFFERED=1
+DynamicUser=yes
+StateDirectory=kodak-scan
+LoadCredential=paperless-token:/etc/kodak-scan/paperless-token
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
