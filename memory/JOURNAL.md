@@ -78,3 +78,8 @@
 - Feasibility: saned under box64 plus python3-sane via the net backend works; NO_DOCS polling is instant (F-035).
 - Wrote `pi/scan-station/` (kodak_scand.py, units, install.sh, config example, README). Installed on the Pi; both services active, polling, ~0.5 % CPU idle. Upload not tested yet (no Paperless URL/token).
 - Owner gave the Paperless address `http://192.168.10.242:8000` (the DNS name `paperless.niko.de` → 192.168.100.11 was unreachable from the Pi's WLAN) and the token (stored in /etc/kodak-scan/paperless-token, 600). The 3 spooled stacks uploaded at once (F-036). The token user can't read tags/tasks/documents (403).
+
+## 2026-10-01: OLED status display (PoE HAT (B))
+- Owner asked for the HAT's OLED to show the IP and scan activity. Enabled I2C (persistent), found `0x3c` OLED + `0x20` fan controller (F-037).
+- Added `pi/scan-station/kodak_oled.py` + `kodak-oled.service`; kodak-scand now writes `/run/kodak-scan/status.json` (ADR-011). Installed; all three services active. Layout checked by rendering the frames to a PNG; the real panel still needs the owner's eyes (`oled.rotate: 180` if upside down) and a scan with paper to see "Scanning page N".
+- Found while installing: kodak-scand had been failing for ~29 h with `Error during device I/O` until saned was restarted (F-038, Q-023).
