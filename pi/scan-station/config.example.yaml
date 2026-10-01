@@ -36,3 +36,5 @@ paperless:
 oled:                                    # optional: status display on the PoE HAT (B) (kodak-oled.service)
   rotate: 0                              # 180 if the text is upside down
   contrast: 96                           # 0–255
+  screensaver: true                      # starfield + bouncing IP while idle ("Ready", nothing to upload)
+  screensaver_after: 30                  # seconds of idle before it starts

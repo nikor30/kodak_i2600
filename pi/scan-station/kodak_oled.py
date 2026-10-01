@@ -5,12 +5,17 @@ Top line: the Pi's IP address. Bottom line: what the scan station is doing,
 read from the status file kodak-scand keeps in /run/kodak-scan/status.json
 (starting / ready / scanning page N / error, plus the upload queue).
 
+While the station is idle ("Ready", nothing to upload) a screensaver takes
+over: a starfield with the IP address bouncing around, which also spares the
+OLED from burn-in.
+
 Only the display is touched. The HAT's fan controller (PCF8574 at 0x20) is
 left as it is.
 """
 import argparse
 import json
 import logging
+import random
 import signal
 import socket
 import threading
@@ -23,7 +28,11 @@ from smbus2 import SMBus
 log = logging.getLogger("kodak-oled")
 FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
 DEFAULTS = {"bus": 1, "address": 0x3C, "width": 128, "height": 32, "rotate": 0,
-            "contrast": 0x60, "status_file": "/run/kodak-scan/status.json"}
+            "contrast": 0x60, "status_file": "/run/kodak-scan/status.json",
+            "screensaver": True, "screensaver_after": 30}
+
+
+BIT_REVERSE = bytes(int(f"{i:08b}"[::-1], 2) for i in range(256))
 
 
 class SSD1306:
@@ -46,14 +55,10 @@ class SSD1306:
             self.bus.write_byte_data(self.addr, 0x00, v)
 
     def show(self, im):
-        px, buf = im.load(), []
-        for page in range(self.height // 8):
-            for x in range(self.width):
-                byte = 0
-                for bit in range(8):
-                    if px[x, page * 8 + bit]:
-                        byte |= 1 << bit
-                buf.append(byte)
+        # The panel wants one byte per column and 8-pixel page, top pixel = bit 0. Transposed,
+        # each image column is a row of height/8 bytes with the top pixel in bit 7.
+        cols, pages = im.transpose(Image.Transpose.TRANSPOSE).tobytes(), self.height // 8
+        buf = list(b"".join(cols[page::pages].translate(BIT_REVERSE) for page in range(pages)))
         self.cmd(0x21, 0, self.width - 1, 0x22, 0, self.height // 8 - 1)
         for i in range(0, len(buf), 32):       # SMBus block limit
             self.bus.write_i2c_block_data(self.addr, 0x40, buf[i:i + 32])
@@ -129,6 +134,42 @@ def render(cfg, ip, st, tick):
     return im.rotate(180) if cfg["rotate"] == 180 else im
 
 
+class Screensaver:
+    """Starfield flying right to left, the IP address bouncing over it."""
+
+    def __init__(self, cfg):
+        self.cfg, self.w, self.h = cfg, cfg["width"], cfg["height"]
+        self.stars = [self.star(random.uniform(0, self.w)) for _ in range(28)]
+        self.font = font(True, 10)
+        self.x, self.y, self.dx, self.dy = 3.0, 2.0, 1.0, 0.5
+
+    def star(self, x):
+        return [x, random.randrange(self.h), random.choice((0.4, 0.4, 0.8, 0.8, 1.6, 2.6))]
+
+    def frame(self, ip):
+        im = Image.new("1", (self.w, self.h))
+        d = ImageDraw.Draw(im)
+        for i, (x, y, v) in enumerate(self.stars):
+            x -= v
+            self.stars[i] = [x, y, v] if x > -4 else self.star(self.w)
+            d.line((x, y, x + (v if v > 1 else 0), y), fill=1)   # fast stars leave a streak
+        text = ip or "no network"
+        l, t, r, b = d.textbbox((0, 0), text, font=self.font)
+        tw, th = r - l, b - t
+        self.x += self.dx
+        self.y += self.dy
+        if not 0 <= self.x <= self.w - tw:
+            self.dx = -self.dx
+            self.x = min(max(self.x, 0), self.w - tw)
+        if not 0 <= self.y <= self.h - th:
+            self.dy = -self.dy
+            self.y = min(max(self.y, 0), self.h - th)
+        x, y = int(self.x), int(self.y)
+        d.rectangle((x - 2, y - 2, x + tw + 1, y + th + 1), fill=0)
+        d.text((x - l, y - t), text, font=self.font, fill=1)
+        return im.rotate(180) if self.cfg["rotate"] == 180 else im
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", default="/etc/kodak-scan/config.yaml")
@@ -145,6 +186,7 @@ def main():
         signal.signal(sig, lambda *_: stop.set())
 
     oled, last, tick, ip, ip_at = None, None, 0, None, 0.0
+    saver, idle_since, saving = Screensaver(cfg), None, False
     while not stop.is_set():
         try:
             if oled is None:
@@ -153,7 +195,13 @@ def main():
                 log.info("OLED on i2c-%d at 0x%02x", cfg["bus"], cfg["address"])
             if time.monotonic() - ip_at > 5:
                 ip, ip_at = ip_address(), time.monotonic()
-            im = render(cfg, ip, read_status(cfg["status_file"]), tick)
+            st = read_status(cfg["status_file"])
+            if not (cfg["screensaver"] and st and st.get("state") == "ready" and not st.get("queued")):
+                idle_since = None
+            elif idle_since is None:
+                idle_since = time.monotonic()
+            saving = idle_since is not None and time.monotonic() - idle_since >= cfg["screensaver_after"]
+            im = saver.frame(ip) if saving else render(cfg, ip, st, tick)
             data = im.tobytes()
             if data != last:
                 oled.show(im)
@@ -163,7 +211,7 @@ def main():
             oled = None
             stop.wait(30)
         tick += 1
-        stop.wait(0.5)
+        stop.wait(0.1 if saving else 0.5)
     if oled is not None:
         try:
             oled.off()

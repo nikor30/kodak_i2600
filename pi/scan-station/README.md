@@ -47,9 +47,13 @@ enables I2C if needed. The HAT's fan controller (`0x20`) is not touched.
 | top | the Pi's IP address, or `no network` |
 | bottom | `Scanner starting…`, `Ready`, `Ready · N to upload`, `Scanning page N` (with a moving bar), the scanner's error text, or `Scan service off` |
 
+After 30 s of `Ready` with nothing to upload, a screensaver takes over (a starfield with the IP
+bouncing over it); it ends as soon as a scan starts, an upload is queued, or an error occurs.
+Switch it off with `screensaver: false`.
+
 kodak-scand publishes its state in `/run/kodak-scan/status.json`; the display service only reads
 that file. Settings: the optional `oled:` section in the config (`rotate: 180` if the text is
-upside down, `contrast`), then `systemctl restart kodak-oled`.
+upside down, `contrast`, `screensaver`, `screensaver_after`), then `systemctl restart kodak-oled`.
 
 ## Spool (`/var/lib/kodak-scan`, i.e. `/var/lib/private/kodak-scan`)
 | dir | content |
