@@ -6,8 +6,8 @@ read from the status file kodak-scand keeps in /run/kodak-scan/status.json
 (starting / ready / scanning page N / error, plus the upload queue).
 
 While the station is idle ("Ready", nothing to upload) a screensaver takes
-over: a starfield with the IP address bouncing around, which also spares the
-OLED from burn-in.
+over: a starfield with the IP address, CPU temperature and fan state bouncing
+around, which also spares the OLED from burn-in.
 
 The HAT's fan is switched by one pin of the PCF8574 at 0x20 (on/off only, no
 PWM). This service also runs it as a thermostat: on above fan.on_temp, off
@@ -75,7 +75,7 @@ class Fan:
     """Thermostat for the HAT fan: PCF8574 pin P0, low = fan on."""
 
     def __init__(self, bus, cfg):
-        self.bus_no, self.cfg, self.on, self.checked = bus, cfg, None, 0.0
+        self.bus_no, self.cfg, self.on, self.checked, self.temp = bus, cfg, None, 0.0, None
 
     def switch(self, on):
         with SMBus(self.bus_no) as bus:
@@ -86,21 +86,31 @@ class Fan:
         self.on = on
 
     def update(self):
-        if not self.cfg["enabled"] or time.monotonic() - self.checked < 5:
+        if time.monotonic() - self.checked < 5:
             return
         self.checked = time.monotonic()
         try:
-            try:
-                with open(CPU_TEMP) as f:
-                    temp = int(f.read()) / 1000
-            except (OSError, ValueError):
-                temp = None                    # unknown temperature: keep it cooled
+            with open(CPU_TEMP) as f:
+                temp = int(f.read()) / 1000
+        except (OSError, ValueError):
+            temp = None                        # unknown temperature: keep it cooled
+        self.temp = temp
+        if not self.cfg["enabled"]:
+            return
+        try:
             if temp is None or temp >= self.cfg["on_temp"] or self.on is None and temp > self.cfg["off_temp"]:
                 self.switch(True)
             elif temp <= self.cfg["off_temp"]:
                 self.switch(False)
         except OSError as e:
             log.error("fan: %s", e)
+
+    def text(self):
+        """For the display, e.g. "52°C · fan off"."""
+        parts = [] if self.temp is None else [f"{self.temp:.0f}°C"]
+        if self.on is not None:
+            parts.append("fan on" if self.on else "fan off")
+        return " · ".join(parts)
 
     def release(self):
         """Leave the fan running when nobody watches the temperature."""
@@ -178,18 +188,18 @@ def render(cfg, ip, st, tick):
 
 
 class Screensaver:
-    """Starfield flying right to left, the IP address bouncing over it."""
+    """Starfield flying right to left; IP address, temperature and fan state bounce over it."""
 
     def __init__(self, cfg):
         self.cfg, self.w, self.h = cfg, cfg["width"], cfg["height"]
         self.stars = [self.star(random.uniform(0, self.w)) for _ in range(28)]
-        self.font = font(True, 10)
+        self.font, self.small = font(True, 10), font(False, 9)
         self.x, self.y, self.dx, self.dy = 3.0, 2.0, 1.0, 0.5
 
     def star(self, x):
         return [x, random.randrange(self.h), random.choice((0.4, 0.4, 0.8, 0.8, 1.6, 2.6))]
 
-    def frame(self, ip):
+    def frame(self, ip, info=""):
         im = Image.new("1", (self.w, self.h))
         d = ImageDraw.Draw(im)
         for i, (x, y, v) in enumerate(self.stars):
@@ -199,17 +209,23 @@ class Screensaver:
         text = ip or "no network"
         l, t, r, b = d.textbbox((0, 0), text, font=self.font)
         tw, th = r - l, b - t
+        if info:
+            il, it, ir, ib = d.textbbox((0, 0), info, font=self.small)
+            ih = th + 3                        # where the second line starts
+            tw, th = max(tw, ir - il), ih + ib - it
         self.x += self.dx
         self.y += self.dy
-        if not 0 <= self.x <= self.w - tw:
+        if not 0 <= self.x <= self.w - tw - 1:
             self.dx = -self.dx
-            self.x = min(max(self.x, 0), self.w - tw)
-        if not 0 <= self.y <= self.h - th:
+            self.x = min(max(self.x, 0), self.w - tw - 1)
+        if not 0 <= self.y <= self.h - th - 1:
             self.dy = -self.dy
-            self.y = min(max(self.y, 0), self.h - th)
+            self.y = min(max(self.y, 0), self.h - th - 1)
         x, y = int(self.x), int(self.y)
         d.rectangle((x - 2, y - 2, x + tw + 1, y + th + 1), fill=0)
         d.text((x - l, y - t), text, font=self.font, fill=1)
+        if info:
+            d.text((x - il, y + ih - it), info, font=self.small, fill=1)
         return im.rotate(180) if self.cfg["rotate"] == 180 else im
 
 
@@ -247,7 +263,7 @@ def main():
             elif idle_since is None:
                 idle_since = time.monotonic()
             saving = idle_since is not None and time.monotonic() - idle_since >= cfg["screensaver_after"]
-            im = saver.frame(ip) if saving else render(cfg, ip, st, tick)
+            im = saver.frame(ip, fan.text()) if saving else render(cfg, ip, st, tick)
             data = im.tobytes()
             if data != last:
                 oled.show(im)

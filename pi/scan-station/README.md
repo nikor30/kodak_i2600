@@ -47,8 +47,8 @@ enables I2C if needed.
 | top | the Pi's IP address, or `no network` |
 | bottom | `Scanner starting…`, `Ready`, `Ready · N to upload`, `Scanning page N` (with a moving bar), the scanner's error text, or `Scan service off` |
 
-After 30 s of `Ready` with nothing to upload, a screensaver takes over (a starfield with the IP
-bouncing over it); it ends as soon as a scan starts, an upload is queued, or an error occurs.
+After 30 s of `Ready` with nothing to upload, a screensaver takes over (a starfield with the IP,
+CPU temperature and fan state bouncing over it); it ends as soon as a scan starts, an upload is queued, or an error occurs.
 Switch it off with `screensaver: false`.
 
 kodak-scand publishes its state in `/run/kodak-scan/status.json`; the display service only reads
