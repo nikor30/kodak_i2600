@@ -59,6 +59,11 @@ upside down, `contrast`), then `systemctl restart kodak-oled`.
 | `sent/` | uploaded PDFs, deleted after `keep_sent_days` |
 | `failed/` | PDFs Paperless rejected (HTTP 400/413/415); check the log |
 
+## Self-recovery
+After 3 scanner errors in a row kodak-scand exits with status 75 and systemd restarts
+`kodak-saned` (and with it kodak-scand), at most once per 10 minutes. This covers the case where
+the vendor driver inside a long-running saned no longer opens the device (F-038).
+
 ## Limits (for now)
 - The Start button and the LCD function number are not visible through the vendor SANE
   backend (Q-022). That's why scanning starts on paper detection, and the profile is set in the config.

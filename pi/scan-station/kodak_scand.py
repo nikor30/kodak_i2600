@@ -20,6 +20,7 @@ import os
 import pathlib
 import shutil
 import signal
+import sys
 import threading
 import time
 import uuid
@@ -31,6 +32,11 @@ import yaml
 
 log = logging.getLogger("kodak-scand")
 NO_DOCS = "Document feeder out of documents"
+# Exit status that asks systemd to restart kodak-saned (ExecStopPost in the unit): the
+# vendor stack inside a long-running saned can get stuck after a device I/O error (F-038).
+EXIT_RESTART_SANED = 75
+RESTART_SANED_AFTER = 3        # scanner errors in a row
+RESTART_SANED_INTERVAL = 600   # seconds between two requests (scanner switched off …)
 
 DEFAULTS = {
     "device": "net:127.0.0.1:kds_i2000:i2000",
@@ -168,20 +174,34 @@ def recover_work(spool, profile):
         finish_job(spool, workdir.name, profile, incomplete=True)
 
 
+def saned_restart_due(spool):
+    """True at most once per RESTART_SANED_INTERVAL; the time stamp survives our restart."""
+    stamp = spool.root / "saned-restart"
+    try:
+        if time.time() - stamp.stat().st_mtime < RESTART_SANED_INTERVAL:
+            return False
+    except OSError:
+        pass
+    stamp.touch()
+    return True
+
+
 def scanner_loop(cfg, spool, stop, wake_uploader, status):
+    """Returns the process exit status."""
     profile = cfg["profiles"][cfg["profile"]]
-    dev, backoff = None, 5
+    dev, backoff, failures = None, 5, 0
     sane.init()
     while not stop.is_set():
         try:
             if dev is None:
                 dev = open_device(cfg, profile)
                 backoff = 5
-                status.set(state="ready")
+                status.set(state="ready", error=None)
             try:
                 dev.start()
             except sane._sane.error as e:
                 if str(e) == NO_DOCS:
+                    failures = 0
                     stop.wait(cfg["poll_interval"])
                     continue
                 raise
@@ -194,10 +214,15 @@ def scanner_loop(cfg, spool, stop, wake_uploader, status):
                 wake_uploader.set()
             if err is not None:
                 raise err
-            status.set(state="ready")
+            failures = 0
+            status.set(state="ready", error=None)
         except Exception as e:
-            log.error("scanner: %s; reopening in %d s", e, backoff)
+            failures += 1
             status.set(state="error", error=str(e))
+            if failures >= RESTART_SANED_AFTER and saned_restart_due(spool):
+                log.error("scanner: %s; %d errors in a row, asking for a kodak-saned restart", e, failures)
+                return EXIT_RESTART_SANED
+            log.error("scanner: %s; reopening in %d s", e, backoff)
             if dev is not None:
                 try:
                     dev.close()
@@ -208,6 +233,7 @@ def scanner_loop(cfg, spool, stop, wake_uploader, status):
             backoff = min(backoff * 2, 60)
     if dev is not None:
         dev.close()
+    return 0
 
 
 # ------------------------------------------------------------------- upload --
@@ -306,8 +332,11 @@ def main():
     up.start()
     wake.set()   # upload whatever is left in the outbox right away
     threading.current_thread().name = "scan"
-    scanner_loop(cfg, spool, stop, wake, status)
+    code = scanner_loop(cfg, spool, stop, wake, status)
+    stop.set()
+    wake.set()
     up.join(timeout=10)
+    sys.exit(code)
 
 
 if __name__ == "__main__":
