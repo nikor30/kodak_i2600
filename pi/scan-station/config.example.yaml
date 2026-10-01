@@ -38,3 +38,8 @@ oled:                                    # optional: status display on the PoE H
   contrast: 96                           # 0–255
   screensaver: true                      # starfield + bouncing IP while idle ("Ready", nothing to upload)
   screensaver_after: 30                  # seconds of idle before it starts
+
+fan:                                     # PoE HAT (B) fan: on/off thermostat (the HAT has no PWM)
+  enabled: true                          # false: leave the fan alone
+  on_temp: 60                            # °C CPU: fan on at or above
+  off_temp: 50                           # °C CPU: fan off at or below

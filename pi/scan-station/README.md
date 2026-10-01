@@ -40,7 +40,7 @@ resolved via `/api/tags/`, so the token's user also needs **view** permission on
 
 ## Status display (PoE HAT (B) OLED)
 `kodak-oled.service` drives the HAT's 128×32 SSD1306 display (I2C bus 1, `0x3c`). `install.sh`
-enables I2C if needed. The HAT's fan controller (`0x20`) is not touched.
+enables I2C if needed.
 
 | line | content |
 |---|---|
@@ -54,6 +54,12 @@ Switch it off with `screensaver: false`.
 kodak-scand publishes its state in `/run/kodak-scan/status.json`; the display service only reads
 that file. Settings: the optional `oled:` section in the config (`rotate: 180` if the text is
 upside down, `contrast`, `screensaver`, `screensaver_after`), then `systemctl restart kodak-oled`.
+
+## Fan (PoE HAT (B))
+The HAT's fan can only be switched on or off (one pin of the PCF8574 at `0x20`; no PWM).
+`kodak-oled.service` runs it as a thermostat: on at `fan.on_temp` (60 °C CPU), off at
+`fan.off_temp` (50 °C). The fan is switched on when the service stops, and it stays on if the
+temperature cannot be read. `fan.enabled: false` leaves the fan alone.
 
 ## Spool (`/var/lib/kodak-scan`, i.e. `/var/lib/private/kodak-scan`)
 | dir | content |

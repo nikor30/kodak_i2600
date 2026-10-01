@@ -9,8 +9,9 @@ While the station is idle ("Ready", nothing to upload) a screensaver takes
 over: a starfield with the IP address bouncing around, which also spares the
 OLED from burn-in.
 
-Only the display is touched. The HAT's fan controller (PCF8574 at 0x20) is
-left as it is.
+The HAT's fan is switched by one pin of the PCF8574 at 0x20 (on/off only, no
+PWM). This service also runs it as a thermostat: on above fan.on_temp, off
+below fan.off_temp, and on again when the service stops.
 """
 import argparse
 import json
@@ -30,6 +31,8 @@ FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
 DEFAULTS = {"bus": 1, "address": 0x3C, "width": 128, "height": 32, "rotate": 0,
             "contrast": 0x60, "status_file": "/run/kodak-scan/status.json",
             "screensaver": True, "screensaver_after": 30}
+FAN_DEFAULTS = {"enabled": True, "address": 0x20, "on_temp": 60, "off_temp": 50}
+CPU_TEMP = "/sys/class/thermal/thermal_zone0/temp"
 
 
 BIT_REVERSE = bytes(int(f"{i:08b}"[::-1], 2) for i in range(256))
@@ -66,6 +69,46 @@ class SSD1306:
     def off(self):
         self.cmd(0xAE)
         self.bus.close()
+
+
+class Fan:
+    """Thermostat for the HAT fan: PCF8574 pin P0, low = fan on."""
+
+    def __init__(self, bus, cfg):
+        self.bus_no, self.cfg, self.on, self.checked = bus, cfg, None, 0.0
+
+    def switch(self, on):
+        with SMBus(self.bus_no) as bus:
+            pins = bus.read_byte(self.cfg["address"])
+            bus.write_byte(self.cfg["address"], pins & 0xFE if on else pins | 0x01)
+        if on != self.on:
+            log.info("fan %s", "on" if on else "off")
+        self.on = on
+
+    def update(self):
+        if not self.cfg["enabled"] or time.monotonic() - self.checked < 5:
+            return
+        self.checked = time.monotonic()
+        try:
+            try:
+                with open(CPU_TEMP) as f:
+                    temp = int(f.read()) / 1000
+            except (OSError, ValueError):
+                temp = None                    # unknown temperature: keep it cooled
+            if temp is None or temp >= self.cfg["on_temp"] or self.on is None and temp > self.cfg["off_temp"]:
+                self.switch(True)
+            elif temp <= self.cfg["off_temp"]:
+                self.switch(False)
+        except OSError as e:
+            log.error("fan: %s", e)
+
+    def release(self):
+        """Leave the fan running when nobody watches the temperature."""
+        if self.cfg["enabled"]:
+            try:
+                self.switch(True)
+            except OSError:
+                pass
 
 
 def ip_address():
@@ -177,9 +220,11 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         with open(args.config) as f:
-            cfg = {**DEFAULTS, **((yaml.safe_load(f) or {}).get("oled") or {})}
+            conf = yaml.safe_load(f) or {}
     except OSError:
-        cfg = dict(DEFAULTS)
+        conf = {}
+    cfg = {**DEFAULTS, **(conf.get("oled") or {})}
+    fan = Fan(cfg["bus"], {**FAN_DEFAULTS, **(conf.get("fan") or {})})
 
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -188,6 +233,7 @@ def main():
     oled, last, tick, ip, ip_at = None, None, 0, None, 0.0
     saver, idle_since, saving = Screensaver(cfg), None, False
     while not stop.is_set():
+        fan.update()
         try:
             if oled is None:
                 oled = SSD1306(cfg["bus"], cfg["address"], cfg["width"], cfg["height"], cfg["contrast"])
@@ -212,6 +258,7 @@ def main():
             stop.wait(30)
         tick += 1
         stop.wait(0.1 if saving else 0.5)
+    fan.release()
     if oled is not None:
         try:
             oled.off()
