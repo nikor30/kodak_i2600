@@ -83,3 +83,4 @@
 - Owner asked for the HAT's OLED to show the IP and scan activity. Enabled I2C (persistent), found `0x3c` OLED + `0x20` fan controller (F-037).
 - Added `pi/scan-station/kodak_oled.py` + `kodak-oled.service`; kodak-scand now writes `/run/kodak-scan/status.json` (ADR-011). Installed; all three services active. Layout checked by rendering the frames to a PNG; the real panel still needs the owner's eyes (`oled.rotate: 180` if upside down) and a scan with paper to see "Scanning page N".
 - Found while installing: kodak-scand had been failing for ~29 h with `Error during device I/O` until saned was restarted (F-038, Q-023).
+- Same day: self-recovery (ADR-012). kodak-scand exits 75 after 3 errors in a row and the unit restarts saned, at most once per 10 min. Tested with a wrong device name via a temporary drop-in (F-039); test files removed, services back on the real config and `ready`.

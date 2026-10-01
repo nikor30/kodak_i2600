@@ -50,3 +50,8 @@ Format: ID, date, context, decision, consequences. Never delete; supersede with 
 - **Context:** the owner's Pi has a Waveshare PoE HAT (B) with an SSD1306 OLED (F-037) and wants the IP and the scan activity on it. kodak-scand runs sandboxed (DynamicUser, PrivateDevices) and should not get I2C access.
 - **Decision:** kodak-scand writes its state (`starting`/`ready`/`scanning` + pages/`error`, upload queue) to `$RUNTIME_DIRECTORY/status.json` (`/run/kodak-scan/`). A separate `kodak-oled.service` (root, I2C devices only) renders IP + state with a small built-in SSD1306 driver (smbus2 + PIL, no luma dependency). The fan controller at `0x20` is not touched.
 - **Consequences:** the display is optional and independent of the driver path; other consumers (status web page) can read the same file. The Kodak LCD stays unused until Q-022 is solved.
+
+## ADR-012: kodak-scand asks systemd to restart saned after repeated scanner errors (2026-10-01)
+- **Context:** after a device I/O error the long-running saned/box64 process kept failing every open for ~29 h; a saned restart fixed it (F-038). kodak-scand is sandboxed (DynamicUser) and cannot call systemctl.
+- **Decision:** after 3 scanner errors in a row (no successful poll or scan in between) kodak-scand exits with status 75. `ExecStopPost=+…` in the unit restarts `kodak-saned.service` on that status; `Requires=` and `Restart=always` bring kodak-scand back. A time stamp in the spool (`saned-restart`) limits this to once per 10 minutes, so a switched-off scanner does not cause a restart loop.
+- **Consequences:** still only SANE between service and driver; with the native backend the same rule restarts whatever saned runs then. The root cause of F-038 stays open (Q-023).

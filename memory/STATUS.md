@@ -14,7 +14,7 @@ Phase 0 is done except for the firmware version and photos.
 
 ## Next actions
 0. Owner: check the PoE HAT OLED (IP on top, `Ready` below; `rotate: 180` in the `oled:` config if upside down) and feed a stack to see `Scanning page N` (ADR-011, F-037).
-0b. Self-recovery after scanner I/O errors: kodak-scand stayed broken for ~29 h until saned was restarted (F-038, Q-023).
+0b. Watch whether the F-038 I/O error returns after idle time and whether the automatic saned restart (ADR-012, F-039) cures it: `journalctl -u kodak-scand | grep 'saned restart'` (Q-023).
 1. Owner: confirm the 3 "Scan 2026-09-28 22:3x" documents in Paperless; rotate the API token (it was pasted in the chat) via `sudoedit /etc/kodak-scan/paperless-token` + `systemctl restart kodak-scand`.
 2. Tags per profile: the token's user needs view permission on tags (currently 403 on /api/tags, /api/tasks, /api/documents), or use tag ids.
 3. Outage test (Phase 5 exit criterion): stop Paperless → scan → start it → automatic upload; the time from Start to document should be < 60 s.
