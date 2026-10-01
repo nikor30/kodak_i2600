@@ -38,6 +38,19 @@ resolved via `/api/tags/`, so the token's user also needs **view** permission on
 - The title is `Scan <date time>`; the tags come from the active profile.
 - The active profile is `profile:` in the config (`color300`, `gray300`, `bw300`). Restart the service after a change.
 
+## Status display (PoE HAT (B) OLED)
+`kodak-oled.service` drives the HAT's 128×32 SSD1306 display (I2C bus 1, `0x3c`). `install.sh`
+enables I2C if needed. The HAT's fan controller (`0x20`) is not touched.
+
+| line | content |
+|---|---|
+| top | the Pi's IP address, or `no network` |
+| bottom | `Scanner starting…`, `Ready`, `Ready · N to upload`, `Scanning page N` (with a moving bar), the scanner's error text, or `Scan service off` |
+
+kodak-scand publishes its state in `/run/kodak-scan/status.json`; the display service only reads
+that file. Settings: the optional `oled:` section in the config (`rotate: 180` if the text is
+upside down, `contrast`), then `systemctl restart kodak-oled`.
+
 ## Spool (`/var/lib/kodak-scan`, i.e. `/var/lib/private/kodak-scan`)
 | dir | content |
 |---|---|

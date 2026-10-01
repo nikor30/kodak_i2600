@@ -11,6 +11,7 @@ Environment=SANE_CONFIG_DIR=/usr/local/lib/kodak-scan/sane.d
 Environment=PYTHONUNBUFFERED=1
 DynamicUser=yes
 StateDirectory=kodak-scan
+RuntimeDirectory=kodak-scan
 LoadCredential=paperless-token:/etc/kodak-scan/paperless-token
 Restart=always
 RestartSec=10
