@@ -127,3 +127,4 @@
 - Third power cycle 15:17: native power-up + automatic SetSequenceNumber (F-079).
 - Owner confirmed the display after the automatic path (F-079). Power-up replay ported to C (F-080), timing facts added to commands.md section 6 first. Device test needs a power cycle with kodak-native stopped.
 - C power-up on the device with the owner (F-081): works, labels in the C font confirmed on the LCD. Follow-up scan blocked by `feeder empty` with a sheet loaded; to be checked.
+- Scan through the C backend after its own power-up (F-082). The `feeder empty` reading before it was correct: no sheet was in. Lesson: when the scanner says empty, ask the owner to look before suspecting the sensor.

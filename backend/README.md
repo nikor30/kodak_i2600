@@ -6,8 +6,8 @@ only. No vendor code, no emulation.
 **State (2026-10-08): first version.** Built and tested offline against saved image streams;
 on the scanner, detection, open, options, the empty-feeder case and **color duplex scans of one sheet and of a 3-sheet stack**
 are tested, in Color, Gray and Lineart, duplex and front-only, and with all pages spooled to
-disk. Deskew is tested offline only (drawn sheets and a saved scan). Label uploads are accepted
-by the scanner, but nobody has looked at the display yet. Cancelling inside a page and the
+disk. Deskew is tested offline only (drawn sheets and a saved scan). Labels have been seen on the
+display. Cancelling inside a page and the
 Start-button sensor are not tested.
 
 ## What it does
@@ -20,8 +20,8 @@ Start-button sensor are not tested.
 - After a scanner power cycle, loads the firmware itself at the first open if a local power-up
   file is configured (`powerup` in `kodak_i2x00.conf`; see the comment there for how to make
   it). Without that file `sane_open` fails with an I/O error until something else has
-  initialised the scanner. **Not yet run on the device from C** (the same replay works in the
-  Python station).
+  initialised the scanner. Run once on the device: 10 s, and a
+  scan afterwards worked.
 - Each page is deskewed, cropped to the sheet and colour-corrected (`--swdeskew=no` keeps the
   angle, `--raw` delivers the untouched sensor image).
 
