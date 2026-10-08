@@ -17,6 +17,9 @@ _Last updated: 2026-10-08_
 - Phase 5 (first version): `pi/scan-station/` = kodak-saned (saned under box64, localhost) + kodak-scand (auto-scan on paper → PDF → Paperless REST, spool + retry), ADR-010, F-035. Installed and enabled on the Pi; end to end verified with 3 color stacks uploaded to Paperless at `http://192.168.10.242:8000` (F-036).
 - OLED status display on the PoE HAT (B): `kodak-oled.service` + status file from kodak-scand (ADR-011, F-037). Idle screensaver (starfield + bouncing IP). Fan thermostat in the same service (F-040; HAT fan switch must be in the programmable position). Installed 2026-10-01; not yet confirmed visually.
 
+## Destinations, statistics, display info, idle rest (2026-10-08, ADR-020, F-090)
+Installed and running. Needs the owner: (1) look at the scanner's display (profile text + `Today/Total` + date/time; does it update each minute?), (2) set up a real share and/or mail server on the settings page and press the test buttons, then scan with a profile sent there, (3) after 15 idle minutes the log says `leaving the scanner alone`: does the scanner go to standby, does Start still work (Q-033)?
+
 ## Settings page (2026-10-08)
 `kodak-web.service`, port 2600, user `admin`, password in `/etc/kodak-scan/web-password` (ADR-019, F-089). Server and API tested; **the owner has not opened it in a browser yet**. Root README rewritten for the current state.
 
