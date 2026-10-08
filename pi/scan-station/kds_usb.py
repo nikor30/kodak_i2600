@@ -18,10 +18,11 @@ METERS = 0x33
 EOL_CONFIGURATION = 0x34
 SERIAL_NUMBER = 0x36
 LCD_POPULATE = 0x62
+SET_SEQUENCE_NUMBER = 0x16
 INTERRUPT_EVENT_CONTROL = 0x3A
 
 READ_SAFE = {GET_STATUS, GET_FW_VERSIONS, METERS, EOL_CONFIGURATION, SERIAL_NUMBER}
-WRITE_SAFE = {LCD_POPULATE, INTERRUPT_EVENT_CONTROL}
+WRITE_SAFE = {LCD_POPULATE, INTERRUPT_EVENT_CONTROL, SET_SEQUENCE_NUMBER}
 
 LCD_W, LCD_H = 128, 48          # LCDPopulate bitmap: 6 pages of 128 column bytes, bit 0 = top row
 LCD_TYPE_LABEL = 1              # message type of the function-number labels, id = number
@@ -104,6 +105,11 @@ class Device:
         if msg != LCD_MSG_DISCONNECTED and not (msg_type == LCD_TYPE_LABEL and 1 <= msg_id <= 9):
             raise ValueError(f"LCD message {msg} is not allowed")
         self.set(LCD_POPULATE, (msg_id << 8) | msg_type, ((LCD_H // 8) << 8) | LCD_W, bitmap)
+
+    def set_function_numbers(self):
+        """SetSequenceNumber exactly as the vendor driver sends it on every open: show function 1,
+        highest selectable number 7 (docs/protocol/commands.md; other values are not classified)."""
+        self.set(SET_SEQUENCE_NUMBER, 1, 7)
 
     def events(self, on):
         """Switch interrupt events on/off (as captured: wValue 1, wIndex 1 = on / 0 = off)."""

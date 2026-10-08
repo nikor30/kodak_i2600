@@ -5,6 +5,7 @@
   kdsprobe.py watch [--seconds N]   print status changes and interrupt events
                                     (press buttons, load/remove paper, open the cover)
   kdsprobe.py lcd TEXT [--label N] [--size 12] [--dry-run]
+  kdsprobe.py function          send SetSequenceNumber 1/7 (function number 1 of 7), as the vendor does on open
                                     replace the LCD message "Rescan documents" (type 4, id 1; the
                                     vendor driver restores it on its next open)
 
@@ -63,6 +64,15 @@ def watch_loop(dev, args, t0, prev, next_status):
             prev = st
 
 
+def cmd_function(dev, args):
+    before = k.parse_status(dev.get(k.GET_STATUS, 32))
+    dev.set_function_numbers()
+    time.sleep(0.5)
+    after = k.parse_status(dev.get(k.GET_STATUS, 32))
+    print(f"SetSequenceNumber 1/7 sent; function number in the status: {before['button']} -> {after['button']}, "
+          f"error {before['error']} -> {after['error']}")
+
+
 def cmd_lcd(dev, args):
     bitmap = k.lcd_text(args.text, args.size)
     for row in k.lcd_rows(bitmap):
@@ -81,6 +91,7 @@ def main():
     sub.add_parser("info")
     w = sub.add_parser("watch")
     w.add_argument("--seconds", type=float, default=0)
+    sub.add_parser("function")
     l = sub.add_parser("lcd")
     l.add_argument("text")
     l.add_argument("--size", type=int, default=12)
@@ -89,7 +100,7 @@ def main():
     args = ap.parse_args()
     try:
         with k.Device() as dev:
-            {"info": cmd_info, "watch": cmd_watch, "lcd": cmd_lcd}[args.cmd](dev, args)
+            {"info": cmd_info, "watch": cmd_watch, "lcd": cmd_lcd, "function": cmd_function}[args.cmd](dev, args)
     except KeyboardInterrupt:
         pass
     except k.UsbError as e:

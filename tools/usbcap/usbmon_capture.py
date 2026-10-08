@@ -23,6 +23,7 @@ import time
 HDR = 48                      # struct mon_bin_hdr as returned by read(2) (API 0)
 DLT_USB_LINUX = 189
 MON_IOCT_RING_SIZE = 0x9204   # _IO('\x92', 4)
+MON_IOCG_STATS = 0x80089203   # _IOR('\x92', 3, struct mon_bin_stats {u32 queued, dropped})
 RING = 1200 * 1024            # kernel caps captured data per URB at ring/5
 
 
@@ -50,7 +51,11 @@ def main():
     ap.add_argument("--seconds", type=float, default=0)
     args = ap.parse_args()
 
-    fd = os.open(f"/dev/usbmon{args.bus}", os.O_RDONLY)
+    fd = os.open(f"/dev/usbmon{args.bus}", os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        os.nice(-10)                          # bulk bursts overrun the 1.2 MB ring quickly
+    except OSError:
+        pass
     try:
         fcntl.ioctl(fd, MON_IOCT_RING_SIZE, RING)
     except OSError as e:
@@ -64,12 +69,14 @@ def main():
     skip = {}
     n = nbytes = 0
     end = time.time() + args.seconds if args.seconds else None
-    with open(args.out, "wb") as f:
+    with open(args.out, "wb", buffering=8 << 20) as f:
         f.write(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 0x40000, DLT_USB_LINUX))
         while not stop and (end is None or time.time() < end):
-            if not select.select([fd], [], [], 0.25)[0]:
+            try:
+                ev = os.read(fd, HDR + RING)      # non-blocking: drain as fast as possible
+            except BlockingIOError:
+                select.select([fd], [], [], 0.25)
                 continue
-            ev = os.read(fd, HDR + RING)
             if len(ev) < HDR:
                 continue
             dev = ev[11]
@@ -87,7 +94,11 @@ def main():
             f.write(ev)
             n += 1
             nbytes += len(ev) - HDR
-    print(f"{n} events, {nbytes} payload bytes -> {args.out}", file=sys.stderr)
+    try:
+        _, dropped = struct.unpack("II", fcntl.ioctl(fd, MON_IOCG_STATS, bytes(8)))
+    except OSError:
+        dropped = "?"
+    print(f"{n} events, {nbytes} payload bytes, {dropped} events dropped by the kernel -> {args.out}", file=sys.stderr)
 
 
 if __name__ == "__main__":

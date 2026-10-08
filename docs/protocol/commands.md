@@ -1,6 +1,6 @@
 # Command layer
 
-Status: **request table, status block, events, panel read-out, scan start/stop and raw image format known; per-mode setup registers, page end and power-up init still open.**
+Status: **request table, status block, events, panel read-out, scan start/stop, raw image format, page trailers and the power-up replay known; per-mode setup registers still open.**
 Last updated 2026-10-08. Every statement names its source; "hyp." marks a hypothesis.
 
 Sources
@@ -52,7 +52,7 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 | `13` | AddEventToLog | – | X | writes the device log |
 | `14` | ClearEventLog | – | X | |
 | `15` | BatchPauseResume | – | ? | |
-| `16` | SetSequenceNumber | C: OUT v=0001 i=0007 len 0 | ? | vendor name "button sequence number" (N); hyp.: the function number shown on the LCD (v) and its maximum (i) |
+| `16` | SetSequenceNumber | C: OUT v=0001 i=0007 len 0, on every open and after the power-up | W (v=1, i=7 only; owner's go-ahead 2026-10-08) | vendor name "button sequence number" (N); hyp.: the function number shown on the LCD (v) and its maximum (i) |
 | `17` | StartCapture | C: OUT len 0, v=3 | ? | used for the short pre-scan capture only (section 8) |
 | `18` | SetAutoWhite | T: OUT len 4 | ? | |
 | `19` | SetOCPMode | – | ? | |
@@ -114,7 +114,8 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 
 `X*`: part of the vendor's normal power-up initialisation (section 6). A native driver cannot
 avoid it after a power cycle; it is to be handled as a verbatim replay of a full capture and
-needs an explicit decision before any code sends it.
+needs an explicit decision before any code sends it. Decision: ADR-016 (replay of a locally
+extracted capture, request allow-list, see "Native replay of the power-up open" in section 6).
 
 ## 3. GetStatus block (`C0 00`, 32 bytes)
 
@@ -222,6 +223,43 @@ The scanner enumerates with a boot firmware (bcdDevice 1.02) and the host loads 
 The images are host-side files/resources of the vendor driver (`loader`, `fpga`, `scanner0…3`;
 N). They are vendor firmware: never committed, to be extracted locally by the user.
 
+### Native replay of the power-up open (C: `power-up-1`, full payloads; ADR-016)
+`tools/usbcap/extract_powerup.py` cuts the power-up open out of a capture into `powerup.json`
+(request list) and `powerup.bin` (payloads ≥ 256 bytes and all bulk data). On the owner's unit:
+743 steps, of which 351 bulk-OUT transfers on EP `0x02` with 5,748,852 bytes in total (the same
+size as in T).
+
+- Window: from the first GetStatus reporting firmware id 1 before the first `21` to the
+  `11` SetLamp 0 that ends the vendor's open.
+- Left out: `35` NVRam write and `62` LCDPopulate (permanent storage / not needed).
+- Requests in the replay. OUT: `21`, `a0`, `20`, `f1` (v=3 only), `a3`, `37`, `1f`, `18`, `11`,
+  `e0`, `30`, `17`. IN: `00`, `f2`, `a3`, `02`, `34`, `36`, `37`, `03`, `35`, `e3`, `e2`, `e0`,
+  `32`, `33`. A file containing anything else is refused before the first request is sent.
+- `1f` SetTime is sent with the current time, not the captured one.
+- `00` GetStatus steps are waits: poll until the firmware id equals the captured one (the
+  device does not answer while a freshly loaded firmware starts).
+- After `17` (calibration capture) both image pipes are read until a short block, data discarded.
+- Start condition: firmware id 1 (boot firmware). End condition: firmware id 3.
+- Timing used by the working replay: the captured pause before a step is kept, capped at 2 s;
+  control and bulk-OUT timeouts 5 s; a GetStatus wait polls every 0.1 s for at most 15 s (errors
+  while the new firmware starts are ignored); the reads after `17` use 16,384-byte requests with a
+  3 s timeout until a short block. A short bulk-OUT write is an error. The device keeps its USB
+  address; the same handle is used throughout.
+- **Text format for the C backend** (`powerup.seq`, beside the unchanged `powerup.bin`; made by
+  `backend/tools/powerup2seq.py`), one step per line: `out`/`in` as in the scan sequence file
+  (section 8), `outblob RR VVVV IIII OFFSET LENGTH PAUSE` (payload from the `.bin`),
+  `bulk OFFSET LENGTH PAUSE` (EP `0x02`), `wait ID PAUSE` (GetStatus until the firmware id is ID).
+- **After the replay the panel has no function number**: the LCD is blank, GetStatus `bButtonState`
+  is 0 and a Start press arrives as `20 01 00` (scanning works all the same). The vendor driver sends
+  `16` SetSequenceNumber v=1 i=7 half a second after the replayed window; sending exactly that sets
+  `bButtonState` to 1, and the LCD shows the number and its label again, ▲/▼ work (owner, 2026-10-08).
+  A driver sends it when `bButtonState` reads 0.
+
+**Status: run once on the owner's unit (2026-10-08 15:06, F-075):** boot firmware to firmware
+id 3 in 10.1 s, LCD labels accepted right after, station `ready`. A scan after a native
+power-up and a second power-up with the same file are still to be shown. Arguments of `18`, `a3`, `e0`, `f1`/`f2` in
+this sequence are not decoded; they are sent exactly as captured.
+
 ## 7. Operator panel (LCD)
 
 ### LCDPopulate (`40 62`, 768 bytes)
@@ -313,3 +351,43 @@ the captured writes regardless still gave a good image.
 
 Requests this makes usable for scanning in color 300 dpi duplex (class `W`, exactly as captured):
 `3a`, `1b`, `32`, `31`, `11`, `45`, `37`, `30`, `10`, `17`, and the captured `a3`/`e0` register writes.
+
+### Driver procedure for a scan (P: the native station, jobs of 1–3 sheets in color, 2026-10-08)
+What a driver has to do around the replay; each point is what the working native station does.
+
+**Before the start** (GetStatus): `bInterlockState` = 1 (cover closed), `bTrayState` = 2 (paper),
+`bFwId` = 3 and `bErrorCode` = 0. Otherwise nothing is sent. The interface is claimed and events are
+enabled (`3a` 1/1) for as long as the device is open; events are read from EP `0x88` in 8-byte
+interrupt transfers.
+
+**Replay rules** for the captured start sequence (steps 1–4 above):
+- only the requests listed under "Native replay" may appear: OUT `3a`, `1b`, `32`, `31`, `11`, `45`,
+  `37`, `a3`, `e0`, `30`, `10`, `17`; IN `00`, `32`, `35`, `37`, `a3`, `e0`. A sequence with any other
+  request is refused as a whole;
+- the captured pause before a request is kept, capped at 1 s;
+- IN replies are not compared with the capture. Exception: the `37` VRam reply is kept and the
+  following `37` write sends **these** bytes back, not the captured ones;
+- directly after `17` StartCapture both image pipes are read with 16,384-byte requests until a
+  short block arrives (the pre-scan block, discarded).
+
+**While scanning**: one reader per image pipe, bulk reads of 256 KiB with a 500 ms timeout; no
+control requests. Pages are cut at the trailers (above): test for the 32 tag bytes at every line
+boundary (multiples of 7,740 bytes from the start of the page), then look for `00 k 01 ff` at
+`2k` bytes after the tags for k = 0…255. If no k fits, the tag bytes were pixel data and the page
+goes on. The next page starts directly after the trailer.
+
+**End**: the **second** End of Operation event (`01`; the first one ends the pre-scan) marks the
+end of the batch, its byte 4 is the number of sheets fed. The readers stop after two consecutive
+read timeouts following that event. Then `11` SetLamp 0 and `45` BatchData `02 00 00` are sent.
+More than 50 leftover lines without a trailer on a pipe mean the data ended inside a page.
+
+**Errors and abort**: events `30` Paper Jam, `31` Multifeed, `32` Buffer Overflow, `34` Other Error
+are recorded and the batch still ends with End of Operation. Interlock State = 2 (cover opened) or
+no event at all for 30 s end the batch from the host side; in these cases, and when the host gives
+up, `10` v=0 OperationStop is sent before the lamp-off. (Not observed: whether `10` v=0 stops the
+feeder in the middle of a stack. The scanner feeds the whole stack on its own once started; a way
+to ask for a single sheet is not known.)
+
+**Sequence file for the C backend**: the same steps as text, one per line:
+`out RR VVVV IIII HEXDATA|- PAUSE` or `in RR VVVV IIII LENGTH PAUSE` (request, wValue, wIndex in
+hex; length decimal; pause in seconds; `#` starts a comment).

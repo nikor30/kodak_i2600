@@ -1,0 +1,13 @@
+:backend "kodak_i2x00"
+:version "0.1 (unmaintained outside this repository)"
+:url "https://github.com/nikor30/kodak_i2600"
+:devicetype :scanner
+
+:mfg "Kodak"
+:url "http://www.kodakalaris.com/"
+
+:model "i2600"
+:interface "USB"
+:usbid "0x040a" "0x601d"
+:status :minimal
+:comment "Color/Gray/Lineart at 300 dpi, ADF simplex/duplex, panel sensors. Needs the scanner's firmware loaded by other means after power-on."
