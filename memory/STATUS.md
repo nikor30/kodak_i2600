@@ -16,7 +16,7 @@ _Last updated: 2026-10-08_
 - OLED status display on the PoE HAT (B): `kodak-oled.service` + status file from kodak-scand (ADR-011, F-037). Idle screensaver (starfield + bouncing IP). Fan thermostat in the same service (F-040; HAT fan switch must be in the programmable position). Installed 2026-10-01; not yet confirmed visually.
 
 ## Next actions (native driver)
-N1. Multi-sheet native scan (page boundaries, trailer layout), then other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
+N1. (multi-sheet done, F-057) Other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
 N2. Image post-processing for the native path: crop to the sheet, deskew, colour/white check against the vendor's output, blank-page detection; then PDF → the existing upload spool.
 N3. Native panel daemon (quick win for the owner's wish): events → Start button + function number → trigger the existing station profile; replaces the 2 s box64 poll. Needs a design decision with the owner (changes ADR-010; the vendor driver claims the interface while it is open).
 N4. LCD function labels (Q-025): owner's go-ahead needed (persistent write, format only known from vendor code).
