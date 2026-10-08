@@ -33,6 +33,18 @@ profiles:
 #   bind: 0.0.0.0                        # 127.0.0.1 = only from the Pi itself
 #   auth: true                           # password in /etc/kodak-scan/web-password, user admin
 
+# smb:                                  # network share for profiles with `destination: smb`
+#   share: //nas/scans
+#   folder: Inbox                        # optional folder inside the share
+#   username: scanner                    # password in /etc/kodak-scan/smb-password (mode 600)
+# email:                                # mail server for profiles with `destination: email`
+#   host: smtp.example.com
+#   port: 587
+#   security: starttls                   # starttls | ssl | none
+#   username: scanner@example.com        # password in /etc/kodak-scan/smtp-password (mode 600)
+#   sender: scanner@example.com
+#   to: me@example.com                   # default recipient; a profile may set `email_to`
+
 paperless:
   url: http://paperless.example:8000     # base URL, without /api
   timeout: 300                           # seconds per upload

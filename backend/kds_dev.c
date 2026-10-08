@@ -34,6 +34,7 @@
 #define REQ_LCD_POPULATE 0x62
 
 #define EV_END_OF_OPERATION 0x01
+#define EV_POWER 0x10
 #define EV_TRAY 0x13
 #define EV_INTERLOCK 0x16
 #define EV_BUTTON 0x20
@@ -76,7 +77,7 @@ struct kds_dev {
     int ev_running, ev_stop, dead;
 
     /* panel, from events and GetStatus */
-    int start_pressed, function, tray, interlock;
+    int start_pressed, function, tray, interlock, power, quiet;
 
     /* batch */
     int active;             /* a batch exists (supervisor thread to join) */
@@ -231,6 +232,11 @@ static void handle_event(struct kds_dev *d, const uint8_t *ev)
     pthread_mutex_lock(&d->lock);
     d->last_event = now();
     switch (ev[0]) {
+    case EV_POWER:              /* 3 = idle, 4 = operating; anything else is news (standby?) */
+        if (ev[2] != d->power && ((ev[2] != 3 && ev[2] != 4) || (d->power != 3 && d->power != 4 && d->power != 0)))
+            kds_dbg(1, "power state %d -> %d", d->power, ev[2]);
+        d->power = ev[2];
+        break;
     case EV_BUTTON:
         d->start_pressed = 1;
         d->function = ev[2];
@@ -410,7 +416,7 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
     /* No control requests while a batch runs (section 8). Otherwise GetStatus at most every
      * 2 s (the vendor's idle poll rate): frontends poll the sensors far more often, and
      * button, paper and cover changes arrive as events in between anyway. */
-    int idle = !d->active && !d->dead && now() - d->status_at >= 2.0;
+    int idle = !d->active && !d->dead && !d->quiet && now() - d->status_at >= 2.0;
     pthread_mutex_unlock(&d->lock);
     struct status st = { 0 };
     if (idle)
@@ -432,6 +438,14 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
         rc = KDS_E_IO;
     pthread_mutex_unlock(&d->lock);
     return rc;
+}
+
+void kds_set_quiet(struct kds_dev *d, int quiet)
+{
+    pthread_mutex_lock(&d->lock);
+    d->quiet = quiet;
+    d->status_at = 0;           /* a fresh status as soon as we may ask again */
+    pthread_mutex_unlock(&d->lock);
 }
 
 /* LCDPopulate (section 7): message type 1 = function label, id = function number.

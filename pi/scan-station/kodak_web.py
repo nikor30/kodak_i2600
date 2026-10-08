@@ -29,6 +29,8 @@ import string
 import urllib.parse
 
 import requests
+
+import kodak_deliver as deliver
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 
@@ -40,6 +42,7 @@ DEFAULTS = {"port": 2600, "bind": "0.0.0.0", "auth": True, "password_file": str(
 FUNCTIONS = range(1, 8)                 # the panel offers function numbers 1..7
 MODES = {"Color", "Gray", "Lineart"}
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+ADDRESS_RE = re.compile(r"^[^@\s,<>\"]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 MAX_BODY = 256 * 1024
 
 
@@ -85,12 +88,23 @@ class Config:
                 "bw_threshold": int(p.get("bw_threshold", 200)),
                 "title": str(p.get("title", "Scan {created:%Y-%m-%d %H:%M}")),
                 "tags": [str(t) for t in (p.get("tags") or [])],
+                "destination": str(p.get("destination") or "paperless"),
+                "email_to": str(p.get("email_to") or ""),
             })
         functions = {str(int(n)): (str(v) if v else str(doc.get("profile", "")))
                      for n, v in (native.get("functions") or {}).items()}
+        smb = {**deliver.SMB_DEFAULTS, **(doc.get("smb") or {})}
+        mail = {**deliver.EMAIL_DEFAULTS, **(doc.get("email") or {})}
         return {
             "paperless": {"url": str(pl.get("url") or ""), "token_set": tf.is_file() and tf.stat().st_size > 0},
+            "smb": {"share": str(smb["share"] or ""), "folder": str(smb["folder"] or ""), "username": str(smb["username"] or ""),
+                    "domain": str(smb["domain"] or ""), "password_set": bool(deliver.read_secret(smb["password_file"]))},
+            "email": {"host": str(mail["host"] or ""), "port": int(mail["port"]), "security": str(mail["security"]),
+                      "username": str(mail["username"] or ""), "sender": str(mail["sender"] or ""), "to": str(mail["to"] or ""),
+                      "password_set": bool(deliver.read_secret(mail["password_file"]))},
             "trigger": str(native.get("trigger", "button")),
+            "display_info": bool(native.get("display_info", True)),
+            "standby_after": float(native.get("standby_after", 15)),
             "default_profile": str(doc.get("profile", "")),
             "functions": functions,
             "profiles": profiles,
@@ -109,6 +123,8 @@ class Config:
             token = str(token).strip()
             if token and not re.fullmatch(r"[A-Za-z0-9._~+/=-]{8,200}", token):
                 raise Invalid("The token contains characters an API token cannot have")
+
+        smb, mail = self.check_smb(new.get("smb") or {}), self.check_email(new.get("email") or {})
 
         profiles = new.get("profiles")
         if not isinstance(profiles, list) or not profiles:
@@ -139,6 +155,16 @@ class Config:
                 raise Invalid(f"Profile {name}: the title may only use {{created}} with a date format") from None
             if len(title) > 120 or any(len(str(t)) > 60 for t in p.get("tags") or []):
                 raise Invalid(f"Profile {name}: title or tag too long")
+            dest = p.get("destination", "paperless")
+            if dest not in deliver.DESTINATIONS:
+                raise Invalid(f"Profile {name}: unknown destination")
+            if dest == "smb" and not smb["share"]:
+                raise Invalid(f"Profile {name} sends to the network share, but no share is set")
+            to = str(p.get("email_to") or "").strip()
+            if to and not all(ADDRESS_RE.match(a.strip()) for a in to.split(",")):
+                raise Invalid(f"Profile {name}: {to!r} is not a list of e-mail addresses")
+            if dest == "email" and not (mail["host"] and mail["sender"] and (to or mail["to"])):
+                raise Invalid(f"Profile {name} sends e-mail, but mail server, sender or recipient is missing")
 
         functions = {}
         for n, name in (new.get("functions") or {}).items():
@@ -156,6 +182,12 @@ class Config:
         trigger = new.get("trigger", "button")
         if trigger not in ("button", "paper"):
             raise Invalid("Unknown trigger")
+        try:
+            standby = float(new.get("standby_after", 15))
+        except (TypeError, ValueError):
+            standby = -1
+        if not 0 <= standby <= 1440:
+            raise Invalid("The idle time before standby must be 0-1440 minutes")
 
         # ---- apply to the document, touching only what the page manages
         doc.setdefault("paperless", CommentedMap())["url"] = url or None
@@ -179,8 +211,24 @@ class Config:
             entry["bw_threshold"] = int(p.get("bw_threshold", 200))
             entry["title"] = str(p.get("title") or "Scan {created:%Y-%m-%d %H:%M}")
             entry["tags"] = [int(t) if str(t).isdigit() else str(t) for t in (p.get("tags") or []) if str(t).strip()]
+            entry["destination"] = p.get("destination", "paperless")
+            if str(p.get("email_to") or "").strip():
+                entry["email_to"] = str(p["email_to"]).strip()
+            else:
+                entry.pop("email_to", None)
+        for section, values in (("smb", smb), ("email", mail)):
+            target = doc.get(section)
+            if not isinstance(target, dict):
+                if not any(v for k, v in values.items() if k not in ("port", "security", "password")):
+                    continue                    # never used: do not add an empty section
+                target = doc[section] = CommentedMap()
+            for k, v in values.items():
+                if k != "password":
+                    target[k] = v
         native = doc.setdefault("native", CommentedMap())
         native["trigger"] = trigger
+        native["display_info"] = bool(new.get("display_info", True))
+        native["standby_after"] = int(standby) if standby == int(standby) else standby
         fmap = CommentedMap()
         for n in sorted(functions):
             fmap[n] = functions[n]
@@ -197,13 +245,61 @@ class Config:
         tmp.rename(self.path)
         notes = ["Settings saved. The station restarts with them within about 15 seconds."]
         if token:
-            tf = self.token_file(doc)
-            fd = os.open(tf.with_name("." + tf.name + ".tmp"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w") as f:
-                f.write(token + "\n")
-            tf.with_name("." + tf.name + ".tmp").rename(tf)
+            self.write_secret(self.token_file(doc), token)
             notes.append("New Paperless token stored.")
+        if smb["password"]:
+            self.write_secret({**deliver.SMB_DEFAULTS, **(doc.get("smb") or {})}["password_file"], smb["password"])
+            notes.append("New password for the share stored.")
+        if mail["password"]:
+            self.write_secret({**deliver.EMAIL_DEFAULTS, **(doc.get("email") or {})}["password_file"], mail["password"])
+            notes.append("New mail password stored.")
         return notes
+
+    @staticmethod
+    def write_secret(path, value):
+        path = pathlib.Path(path)
+        tmp = path.with_name("." + path.name + ".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(value + "\n")
+        tmp.rename(path)
+
+    @staticmethod
+    def check_smb(s):
+        share = str(s.get("share") or "").strip().replace("\\", "/")
+        if share and not re.fullmatch(r"//[A-Za-z0-9._-]+/[^/\"\s][^/\"]*", share):
+            raise Invalid("The share must look like //server/share")
+        out = {"share": share or None, "folder": str(s.get("folder") or "").strip().replace("\\", "/").strip("/"),
+               "username": str(s.get("username") or "").strip(), "domain": str(s.get("domain") or "").strip(),
+               "password": str(s.get("password") or "")}
+        if any('"' in v or "\n" in v or len(v) > 200 for v in out.values() if isinstance(v, str)):
+            raise Invalid("Share settings must not contain quotes or line breaks")
+        return out
+
+    @staticmethod
+    def check_email(m):
+        host = str(m.get("host") or "").strip()
+        if host and not re.fullmatch(r"[A-Za-z0-9._-]{1,200}", host):
+            raise Invalid("The mail server must be a host name or address")
+        try:
+            port = int(m.get("port") or 587)
+        except (TypeError, ValueError):
+            port = 0
+        if not 1 <= port <= 65535:
+            raise Invalid("The mail server port must be 1-65535")
+        security = str(m.get("security") or "starttls")
+        if security not in ("starttls", "ssl", "none"):
+            raise Invalid("Unknown mail security setting")
+        sender, to = str(m.get("sender") or "").strip(), str(m.get("to") or "").strip()
+        if sender and not ADDRESS_RE.match(sender):
+            raise Invalid("The sender must be an e-mail address")
+        if to and not all(ADDRESS_RE.match(a.strip()) for a in to.split(",")):
+            raise Invalid("The recipient must be an e-mail address (several: separated by commas)")
+        out = {"host": host or None, "port": port, "security": security, "username": str(m.get("username") or "").strip(),
+               "sender": sender, "to": to, "password": str(m.get("password") or "")}
+        if any("\n" in v or "\r" in v or len(v) > 300 for v in out.values() if isinstance(v, str)):
+            raise Invalid("Mail settings must not contain line breaks")
+        return out
 
 
 def test_paperless(cfg, url, token):
@@ -232,6 +328,67 @@ def test_paperless(cfg, url, token):
     if r.status_code == 403:
         return False, "The token is valid, but its user may not upload documents"
     return False, f"Unexpected answer from the upload address: HTTP {r.status_code}"
+
+
+def test_destination(cfg, kind, body):
+    """Try the share or the mail server with the values on the page (stored password if none is typed)."""
+    doc = cfg.load()
+    try:
+        if kind == "smb":
+            values = cfg.check_smb(body)
+            stored = {**deliver.SMB_DEFAULTS, **(doc.get("smb") or {})}
+            target = deliver.Smb({**stored, **{k: v for k, v in values.items() if k != "password"}})
+            if not target.configured():
+                return False, "No share set"
+            if values["password"]:
+                return _with_password(target, values["password"], target.test)
+            return True, target.test()
+        values = cfg.check_email(body)
+        stored = {**deliver.EMAIL_DEFAULTS, **(doc.get("email") or {})}
+        target = deliver.Email({**stored, **{k: v for k, v in values.items() if k != "password"}, "timeout": 20})
+        if not target.configured():
+            return False, "Mail server and sender are needed"
+        if values["password"]:
+            return _with_password(target, values["password"], target.test)
+        return True, target.test()
+    except Invalid as e:
+        return False, str(e)
+    except deliver.PermanentError as e:
+        return False, str(e)
+    except Exception as e:  # noqa: BLE001 (whatever the server said)
+        text = str(e).strip() or type(e).__name__
+        return False, f"Did not work: {text[:200]}"
+
+
+def _with_password(target, password, action):
+    """Run a test with a password that is typed on the page but not stored yet."""
+    import tempfile
+    with tempfile.NamedTemporaryFile("w") as f:
+        os.chmod(f.name, 0o600)
+        f.write(password + "\n")
+        f.flush()
+        target.cfg["password_file"] = f.name
+        return True, action()
+
+
+def statistics(cfg):
+    spool = pathlib.Path(cfg.load().get("spool_dir") or "/var/lib/kodak-scan")
+    try:
+        data = json.loads((spool / "stats.json").read_text())
+    except (OSError, ValueError):
+        return {"available": False}
+    today = dt.date.today()
+    days = []
+    for i in range(29, -1, -1):
+        day = (today - dt.timedelta(days=i)).isoformat()
+        rec = data.get("days", {}).get(day, {})
+        days.append({"day": day, "jobs": int(rec.get("jobs", 0)), "pages": int(rec.get("pages", 0))})
+
+    def span(n):
+        return {k: sum(d[k] for d in days[-n:]) for k in ("jobs", "pages")}
+    return {"available": True, "since": data.get("since"), "totals": data.get("totals", {}),
+            "profiles": data.get("profiles", {}), "destinations": data.get("destinations", {}),
+            "today": span(1), "week": span(7), "month": span(30), "days": days}
 
 
 def station_state(cfg):
@@ -321,6 +478,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.reply(200, self.cfg.view())
         elif path == "/api/state":
             self.reply(200, station_state(self.cfg))
+        elif path == "/api/statistics":
+            self.reply(200, statistics(self.cfg))
         else:
             self.reply(404, {"error": "not found"})
 
@@ -346,6 +505,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.reply(200, {"ok": True, "notes": notes, "settings": self.cfg.view()})
             elif path == "/api/test-paperless":
                 ok, text = test_paperless(self.cfg, body.get("url"), body.get("token"))
+                self.reply(200, {"ok": ok, "message": text})
+            elif path in ("/api/test-smb", "/api/test-email"):
+                ok, text = test_destination(self.cfg, path.rsplit("-", 1)[1], body)
                 self.reply(200, {"ok": ok, "message": text})
             else:
                 self.reply(404, {"error": "not found"})

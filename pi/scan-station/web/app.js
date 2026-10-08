@@ -134,12 +134,22 @@ function renderProfiles() {
     docTitle.addEventListener("change", () => { p.title = docTitle.value; });
     const tags = el("input", { type: "text", value: p.tags.join(", "), placeholder: "e.g. inbox, scanner" });
     tags.addEventListener("change", () => { p.tags = tags.value.split(",").map((t) => t.trim()).filter(Boolean); });
+    const dest = el("select", {}, el("option", { value: "paperless", text: "Paperless-ngx" }),
+      el("option", { value: "smb", text: "Network share" }), el("option", { value: "email", text: "E-mail" }));
+    dest.value = p.destination;
+    const mailTo = el("input", { type: "text", value: p.email_to, placeholder: "the recipient set under E-mail" });
+    mailTo.addEventListener("change", () => { p.email_to = mailTo.value.trim(); });
+    const tagsField = field("Paperless tags (comma separated)", tags);
+    const mailToField = field("Recipient for this profile (optional)", mailTo);
+    const showDest = () => { tagsField.hidden = p.destination !== "paperless"; mailToField.hidden = p.destination !== "email"; };
+    dest.addEventListener("change", () => { p.destination = dest.value; showDest(); });
+    showDest();
 
     root.append(el("div", { class: "profile" },
       el("div", { class: "head" }, title, remove),
       el("div", { class: "grid" },
         field("Name", name), field("Text on the display", label), field("Colour mode", mode), qualityField, thresholdField,
-        field("Document title in Paperless", docTitle), field("Paperless tags (comma separated)", tags)),
+        field("Send to", dest), mailToField, field("Document title / file name", docTitle), tagsField),
       el("div", { class: "row", style: "margin-top:8px" },
         check("Scan both sides", p.duplex, (v) => { p.duplex = v; }),
         check("Leave out blank sides", p.drop_blank, (v) => { p.drop_blank = v; }))));
@@ -150,6 +160,12 @@ function renderAll() {
   $("pl-url").value = settings.paperless.url;
   $("pl-token").placeholder = settings.paperless.token_set ? "stored – leave empty to keep it" : "not set yet";
   $("trigger").value = settings.trigger;
+  $("standby").value = settings.standby_after;
+  $("display-info").checked = settings.display_info;
+  for (const k of ["share", "folder", "username", "domain"]) $(`smb-${k}`).value = settings.smb[k];
+  $("smb-password").placeholder = settings.smb.password_set ? "stored – leave empty to keep it" : "not set";
+  for (const k of ["host", "port", "security", "username", "sender", "to"]) $(`mail-${k}`).value = settings.email[k];
+  $("mail-password").placeholder = settings.email.password_set ? "stored – leave empty to keep it" : "not set";
   renderFunctions();
   renderProfiles();
 }
@@ -157,7 +173,7 @@ function renderAll() {
 async function load() {
   try {
     settings = await api("/api/settings");
-    $("pl-token").value = "";
+    for (const id of ["pl-token", "smb-password", "mail-password"]) $(id).value = "";
     renderAll();
     message($("save-msg"), "");
   } catch (e) {
@@ -167,11 +183,14 @@ async function load() {
 
 $("pl-url").addEventListener("change", () => { settings.paperless.url = $("pl-url").value.trim(); });
 $("trigger").addEventListener("change", () => { settings.trigger = $("trigger").value; });
+$("standby").addEventListener("change", () => { settings.standby_after = Number($("standby").value) || 0; });
+$("display-info").addEventListener("change", () => { settings.display_info = $("display-info").checked; });
 $("add-profile").addEventListener("click", () => {
   let n = settings.profiles.length + 1;
   while (profileNames().includes(`profile${n}`)) n += 1;
   settings.profiles.push({ name: `profile${n}`, label: "", mode: "Color", duplex: true, drop_blank: true,
-    jpeg_quality: 85, bw_threshold: 200, title: "Scan {created:%Y-%m-%d %H:%M}", tags: [] });
+    jpeg_quality: 85, bw_threshold: 200, title: "Scan {created:%Y-%m-%d %H:%M}", tags: [],
+    destination: "paperless", email_to: "" });
   renderAll();
 });
 $("reload").addEventListener("click", load);
@@ -189,17 +208,98 @@ $("pl-test").addEventListener("click", async () => {
   $("pl-test").disabled = false;
 });
 
+function smbForm() {
+  return { share: $("smb-share").value.trim(), folder: $("smb-folder").value.trim(), username: $("smb-username").value.trim(),
+    domain: $("smb-domain").value.trim(), password: $("smb-password").value };
+}
+
+function mailForm() {
+  return { host: $("mail-host").value.trim(), port: Number($("mail-port").value) || 587, security: $("mail-security").value,
+    username: $("mail-username").value.trim(), sender: $("mail-sender").value.trim(), to: $("mail-to").value.trim(),
+    password: $("mail-password").value };
+}
+
+function testButton(button, result, path, form, busy) {
+  $(button).addEventListener("click", async () => {
+    const out = $(result);
+    message(out, busy);
+    $(button).disabled = true;
+    try {
+      const r = await api(path, form());
+      message(out, r.message, r.ok);
+    } catch (e) {
+      message(out, e.message, false);
+    }
+    $(button).disabled = false;
+  });
+}
+testButton("smb-test", "smb-result", "/api/test-smb", smbForm, "Testing…");
+testButton("mail-test", "mail-result", "/api/test-email", mailForm, "Sending…");
+
+/* ---- statistics ----------------------------------------------------------- */
+const fmt = (n) => Number(n || 0).toLocaleString();
+
+function tile(label, value, sub) {
+  return el("div", { class: "tile" }, el("div", { class: "k", text: label }), el("div", { class: "v", text: value }),
+    el("div", { class: "s", text: sub }));
+}
+
+function fillTable(id, rows) {
+  const body = $(id).tBodies[0];
+  body.replaceChildren();
+  for (const cells of rows) body.append(el("tr", {}, ...cells.map((c) => el("td", { text: String(c) }))));
+  $(id).hidden = !rows.length;
+}
+
+async function refreshStats() {
+  let s;
+  try { s = await api("/api/statistics"); } catch (e) { return; }
+  $("stats").hidden = !s.available;
+  if (!s.available) return;
+  const t = s.totals;
+  $("stats-since").textContent = `Counted since ${s.since}.` + (t.sheets ? ` ${fmt(t.sheets)} sheets fed, ${fmt(t.blank)} blank sides left out.` : "");
+  const perJob = t.sheets && t.scan_seconds ? ` · ${(t.scan_seconds / t.sheets).toFixed(1)} s per sheet` : "";
+  $("stats-tiles").replaceChildren(
+    tile("Today", fmt(s.today.pages), `pages in ${fmt(s.today.jobs)} scan(s)`),
+    tile("Last 7 days", fmt(s.week.pages), `pages in ${fmt(s.week.jobs)} scan(s)`),
+    tile("Last 30 days", fmt(s.month.pages), `pages in ${fmt(s.month.jobs)} scan(s)`),
+    tile("In total", fmt(t.pages), `pages in ${fmt(t.jobs)} scan(s)${perJob}`));
+  const max = Math.max(1, ...s.days.map((d) => d.pages));
+  const readout = $("bars-readout");
+  const bars = s.days.map((d) => {
+    const fill = el("i");
+    fill.style.height = `${Math.max(d.pages ? 4 : 0, Math.round((d.pages / max) * 100))}%`;
+    const bar = el("div", { class: "bar" + (d.pages ? "" : " empty"), tabIndex: 0 }, fill);
+    const text = `${d.day}: ${fmt(d.pages)} page(s) in ${fmt(d.jobs)} scan(s)`;
+    bar.title = text;
+    bar.setAttribute("aria-label", text);
+    const show = () => { readout.textContent = text; };
+    bar.addEventListener("mouseenter", show);
+    bar.addEventListener("focus", show);
+    return bar;
+  });
+  $("bars").replaceChildren(...bars);
+  $("bars-from").textContent = s.days[0].day;
+  $("bars-to").textContent = "today";
+  fillTable("by-profile", Object.entries(s.profiles).sort((a, b) => b[1].pages - a[1].pages).map(([n, v]) => [n, fmt(v.jobs), fmt(v.pages)]));
+  const names = { paperless: "Paperless-ngx", smb: "Network share", email: "E-mail" };
+  fillTable("by-destination", Object.entries(s.destinations).sort((a, b) => b[1] - a[1]).map(([n, v]) => [names[n] || n, fmt(v)]));
+}
+$("bars").addEventListener("mouseleave", () => { $("bars-readout").textContent = ""; });
+
 $("save").addEventListener("click", async () => {
   const out = $("save-msg");
   const body = JSON.parse(JSON.stringify(settings));
   body.paperless = { url: $("pl-url").value.trim() };
   if ($("pl-token").value.trim()) body.paperless.token = $("pl-token").value.trim();
+  body.smb = smbForm();
+  body.email = mailForm();
   $("save").disabled = true;
   message(out, "Saving…");
   try {
     const r = await api("/api/settings", body);
     settings = r.settings;
-    $("pl-token").value = "";
+    for (const id of ["pl-token", "smb-password", "mail-password"]) $(id).value = "";
     renderAll();
     message(out, r.notes.join(" "), true);
   } catch (e) {
@@ -210,4 +310,6 @@ $("save").addEventListener("click", async () => {
 
 load();
 refreshState();
+refreshStats();
 setInterval(refreshState, 3000);
+setInterval(refreshStats, 30000);

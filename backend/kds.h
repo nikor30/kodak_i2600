@@ -123,6 +123,8 @@ void kds_set_spool(struct kds_dev *d, int max_pages_in_memory, const char *dir);
 int kds_panel(struct kds_dev *d, struct kds_panel *p);
 /* Text shown on the LCD next to function number 1..9; lost when the scanner is switched off. */
 int kds_lcd_label(struct kds_dev *d, int number, const uint8_t bitmap[KDS_LCD_BYTES]);
+/* Quiet: send nothing to the scanner while idle (events still arrive), so that it may go to standby. */
+void kds_set_quiet(struct kds_dev *d, int quiet);
 
 /* A batch is everything in the feeder: the scanner feeds the whole stack by itself. */
 int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex);

@@ -52,6 +52,20 @@
   footer .row { max-width: 860px; margin: 0 auto; padding: 12px 16px; }
   footer .msg { flex: 1 1 200px; }
   .small { font-size: 13px; color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .tile .k { font-size: 13px; color: var(--muted); }
+  .tile .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .tile .s { font-size: 13px; color: var(--muted); }
+  .chart-title { font-size: 13px; color: var(--muted); margin: 0 0 6px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .chart-title span:last-child { color: var(--text); font-variant-numeric: tabular-nums; }
+  .bars { display: flex; align-items: flex-end; gap: 2px; height: 96px; border-bottom: 1px solid var(--line); }
+  .bars .bar { flex: 1 1 0; min-width: 3px; height: 100%; display: flex; align-items: flex-end; cursor: default; }
+  .bars .bar i { display: block; width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 0; }
+  .bars .bar:hover i, .bars .bar:focus-visible i { filter: brightness(1.2); }
+  .bars .bar.empty i { height: 2px !important; background: var(--line); border-radius: 0; }
+  .axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
 </style>
 </head>
 <body>
@@ -83,12 +97,51 @@
   </section>
 
   <section>
+    <h2>Network share (SMB)</h2>
+    <p class="hint">A Windows or NAS share that profiles can save their PDFs to. The password is stored on the scan station and never shown again.</p>
+    <div class="grid">
+      <div><label for="smb-share">Share</label><input id="smb-share" type="text" placeholder="//nas/scans" autocomplete="off" spellcheck="false"></div>
+      <div><label for="smb-folder">Folder in the share (optional)</label><input id="smb-folder" type="text" placeholder="Inbox" autocomplete="off" spellcheck="false"></div>
+      <div><label for="smb-username">User name</label><input id="smb-username" type="text" autocomplete="off" spellcheck="false"></div>
+      <div><label for="smb-password">Password</label><input id="smb-password" type="password" autocomplete="new-password"></div>
+      <div><label for="smb-domain">Domain (optional)</label><input id="smb-domain" type="text" autocomplete="off" spellcheck="false"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" id="smb-test">Test share</button>
+      <span id="smb-result" class="msg" role="status"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>E-mail</h2>
+    <p class="hint">A mail server that profiles can send their PDFs through. The password is stored on the scan station and never shown again.</p>
+    <div class="grid">
+      <div><label for="mail-host">Mail server (SMTP)</label><input id="mail-host" type="text" placeholder="smtp.example.com" autocomplete="off" spellcheck="false"></div>
+      <div><label for="mail-port">Port</label><input id="mail-port" type="number" min="1" max="65535"></div>
+      <div><label for="mail-security">Encryption</label>
+        <select id="mail-security"><option value="starttls">STARTTLS (usually port 587)</option><option value="ssl">SSL/TLS (usually port 465)</option><option value="none">none</option></select></div>
+      <div><label for="mail-username">User name</label><input id="mail-username" type="text" autocomplete="off" spellcheck="false"></div>
+      <div><label for="mail-password">Password</label><input id="mail-password" type="password" autocomplete="new-password"></div>
+      <div><label for="mail-sender">Sender address</label><input id="mail-sender" type="text" placeholder="scanner@example.com" autocomplete="off" spellcheck="false"></div>
+      <div><label for="mail-to">Recipient (several: comma separated)</label><input id="mail-to" type="text" placeholder="me@example.com" autocomplete="off" spellcheck="false"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" id="mail-test">Send test message</button>
+      <span id="mail-result" class="msg" role="status"></span>
+    </div>
+  </section>
+
+  <section>
     <h2>Buttons</h2>
     <p class="hint">The arrow buttons on the scanner choose a function number; Start scans with the profile set here. The display shows the profile's text next to the number.</p>
     <div class="grid" style="margin-bottom:8px">
       <div><label for="trigger">A scan starts</label>
         <select id="trigger"><option value="button">when Start is pressed</option><option value="paper">as soon as paper is inserted</option></select></div>
+      <div><label for="standby">Leave the scanner alone after … idle minutes (0 = never)</label>
+        <input id="standby" type="number" min="0" max="1440" step="1"></div>
     </div>
+    <label class="check" style="margin-bottom:10px"><input id="display-info" type="checkbox"> Show page counts, date and time on the scanner's display</label>
+    <p class="hint">After the idle time the station sends nothing more to the scanner, so the scanner can go to standby by itself; any button or new paper ends the rest. The clock on the display stops being shown then.</p>
     <div class="scroll"><table id="functions">
       <thead><tr><th>Number</th><th>Profile</th><th>Text on the display</th></tr></thead><tbody></tbody>
     </table></div>
@@ -96,9 +149,22 @@
 
   <section>
     <h2>Profiles</h2>
-    <p class="hint">A profile says how a stack is scanned and filed. The display text is shown on the scanner (plain letters and digits; up to about 30 characters appear large).</p>
+    <p class="hint">A profile says how a stack is scanned and where it goes. The display text is shown on the scanner (plain letters and digits; up to about 30 characters appear large).</p>
     <div id="profiles"></div>
     <div class="row" style="margin-top:12px"><button type="button" id="add-profile">Add profile</button></div>
+  </section>
+
+  <section id="stats" hidden>
+    <h2>Statistics</h2>
+    <p class="hint" id="stats-since"></p>
+    <div class="tiles" id="stats-tiles"></div>
+    <p class="chart-title"><span>Pages per day, last 30 days</span><span id="bars-readout" role="status"></span></p>
+    <div class="bars" id="bars" role="img" aria-label="Pages scanned per day over the last 30 days"></div>
+    <div class="axis"><span id="bars-from"></span><span id="bars-to"></span></div>
+    <div class="two">
+      <div class="scroll"><table id="by-profile"><thead><tr><th>Profile</th><th>Scans</th><th>Pages</th></tr></thead><tbody></tbody></table></div>
+      <div class="scroll"><table id="by-destination"><thead><tr><th>Sent to</th><th>Scans</th></tr></thead><tbody></tbody></table></div>
+    </div>
   </section>
 
   <p class="small">Changes take effect when saved: the station restarts with the new settings (about 15 seconds). A copy of the configuration from before the first change is kept as <code>config.yaml.bak-web</code>.</p>

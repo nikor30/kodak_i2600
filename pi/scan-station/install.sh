@@ -31,7 +31,7 @@ fi
 
 log "Installing packages"
 apt-get install -y --no-install-recommends python3-sane python3-pil python3-requests python3-yaml img2pdf libsane1 \
-  python3-smbus2 python3-numpy libusb-1.0-0 fonts-dejavu-core python3-ruamel.yaml >/dev/null
+  python3-smbus2 python3-numpy libusb-1.0-0 fonts-dejavu-core python3-ruamel.yaml smbclient >/dev/null
 
 # OLED on the PoE HAT (B): needs I2C (dtparam=i2c_arm=on + i2c-dev), which raspi-config sets up.
 if [ ! -e /dev/i2c-1 ] && command -v raspi-config >/dev/null; then
@@ -47,7 +47,7 @@ install -d "$LIB/sane.d"
 install -m 755 "$HERE/kodak_scand.py" "$HERE/kodak_oled.py" "$HERE/kodak_native.py" "$HERE/kodak_sane.py" "$HERE/kodak_web.py" "$LIB/"
 install -d "$LIB/web"
 install -m 644 "$HERE"/web/* "$LIB/web/"
-install -m 644 "$HERE/kds_usb.py" "$HERE/kds_scan.py" "$HERE/kds_image.py" "$LIB/"
+install -m 644 "$HERE/kds_usb.py" "$HERE/kds_scan.py" "$HERE/kds_image.py" "$HERE/kodak_deliver.py" "$LIB/"
 install -d "$LIB/sequences"
 install -m 644 "$HERE"/sequences/*.json "$LIB/sequences/"
 install -m 644 "$HERE/sane.d/dll.conf" "$HERE/sane.d/net.conf" "$LIB/sane.d/"

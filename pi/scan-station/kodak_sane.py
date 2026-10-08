@@ -27,6 +27,7 @@ import time
 import numpy as np
 import sane
 
+import kodak_deliver as deliver
 import kodak_scand as station
 
 log = logging.getLogger("kodak-sane")
@@ -38,7 +39,9 @@ VENDOR_OPEN = ["/usr/local/sbin/kodak-x86", "/usr/bin/env", "BOX64_LOG=0", "BOX6
                "/usr/local/bin/box64", "/usr/bin/scanimage", "-d", "kds_i2000:i2000", "-A"]
 DEFAULTS = {"trigger": "button", "functions": {1: None},
             "powerup_seq": "/etc/kodak-scan/firmware/powerup.seq",
-            "workers": 3, "memory_pages": 4, "spool_dir": "/var/tmp"}
+            "workers": 3, "memory_pages": 4, "spool_dir": "/var/tmp",
+            "display_info": True,       # page counts, date and time under the label on the scanner's display
+            "standby_after": 15}        # minutes of idle after which the scanner is left alone (0 = never)
 
 
 # ---------------------------------------------------------------- processing --
@@ -92,7 +95,8 @@ def vendor_open():
 
 
 class Station:
-    def __init__(self, cfg, spool, status, wake_uploader, stop, watch=()):
+    def __init__(self, cfg, spool, status, wake_uploader, stop, stats, watch=()):
+        self.stats = stats
         self.cfg, self.spool, self.status, self.wake, self.stop = cfg, spool, status, wake_uploader, stop
         self.watch = {pathlib.Path(p): self.mtime(p) for p in watch}    # settings files: restart when they change
         self.next_watch = 0
@@ -105,6 +109,10 @@ class Station:
         self.function = 1
         self.dev = None
         self.sensors = {}
+        self.shown = {}                     # function number -> text last sent to the display
+        self.minute = None
+        self.last_activity = time.time()
+        self.resting = False
         self.last_vendor_open = 0
         self.write_sane_config()
 
@@ -149,6 +157,54 @@ class Station:
         (d / f"{BACKEND}.conf").write_text("\n".join(lines) + "\n")
         os.environ["SANE_CONFIG_DIR"] = str(d)
 
+    # ---- display and standby -----------------------------------------------------------
+    def display_text(self, number, clock=True):
+        """Label of a function, plus page counts and the date/time as small lines below it."""
+        title = self.label(number).encode("ascii", "replace").decode()
+        if not self.scfg["display_info"]:
+            return title
+        s = self.stats.summary()
+        counts = f"Today {s['today']['pages']}  Total {s['totals']['pages']}"
+        if len(counts) > 21:
+            counts = f"Tod {s['today']['pages']} Tot {s['totals']['pages']}"
+        lines = [title, counts]
+        if clock:
+            lines.append(time.strftime("%a %d.%m.%Y %H:%M"))
+        return "\n".join(lines)
+
+    def update_display(self, everything=False, clock=True):
+        numbers = sorted(self.functions) if everything else [self.function]
+        for n in numbers:
+            if not 1 <= n <= 7 or n not in self.functions:
+                continue
+            text = self.display_text(n, clock)
+            if self.shown.get(n) != text:
+                setattr(self.dev, f"label_{n}", text)
+                self.shown[n] = text
+
+    def activity(self):
+        """Something happened at the scanner: talk to it again and restart the idle timer."""
+        self.last_activity = time.time()
+        if self.resting:
+            self.resting = False
+            self.dev.quiet = False
+            log.info("activity: talking to the scanner again")
+            self.update_display(everything=True)
+
+    def idle_tick(self):
+        """Once per loop while nothing happens: keep the clock current, or let the scanner rest."""
+        if self.resting:
+            return
+        limit = float(self.scfg["standby_after"]) * 60
+        if limit > 0 and time.time() - self.last_activity > limit:
+            self.update_display(everything=True, clock=False)   # a clock that stands still would be wrong
+            self.dev.quiet = True
+            self.resting = True
+            log.info("idle for %g min: leaving the scanner alone so it can go to standby", limit / 60)
+        elif self.scfg["display_info"] and time.strftime("%H:%M") != self.minute:
+            self.minute = time.strftime("%H:%M")
+            self.update_display()
+
     # ---- connection ------------------------------------------------------------------
     def sensor(self, name):
         return self.dev.dev.get_option(self.dev[name].index)
@@ -170,6 +226,9 @@ class Station:
         self.function = self.sensor("function_number") or 1
         self.sensors = {"paper": bool(self.sensor("page_loaded")), "cover": bool(self.sensor("cover_open"))}
         self.sensor("scan")                 # forget a press from before we were ready
+        self.shown, self.resting, self.last_activity = {}, False, time.time()
+        self.minute = time.strftime("%H:%M")
+        self.update_display(everything=True)
         log.info("scanner %s ready (function %d, %s); labels: %s", names[0], self.function,
                  "paper loaded" if self.sensors["paper"] else "feeder empty",
                  ", ".join(f"{n} = {self.label(n)}" for n in sorted(self.functions)))
@@ -254,6 +313,7 @@ class Station:
         log.info("job %s: %d sheets, %d of %d sides kept, scan %.1f s, total %.1f s%s", job,
                  (sides + 1) // 2 if duplex else sides, kept, sides, t_scan, time.time() - t0,
                  f", ERROR: {error}" if error else "")
+        self.stats.scanned(name, (sides + 1) // 2 if duplex else sides, sides, kept, t_scan)
         if station.finish_job(self.spool, job, profile, incomplete=error is not None):
             self.wake.set()
         if error:
@@ -283,10 +343,14 @@ class Station:
                 pressed = self.sensor("scan")
                 function = self.sensor("function_number") or self.function
                 paper, cover = bool(self.sensor("page_loaded")), bool(self.sensor("cover_open"))
+                changed = pressed or function != self.function or paper != self.sensors["paper"] or cover != self.sensors["cover"]
+                if changed:
+                    self.activity()
                 if function != self.function:
                     log.info("function %d selected (%s)", function, self.label(function))
                     self.function = function
                     self.show_ready()
+                    self.update_display()
                 if cover != self.sensors["cover"]:
                     log.info("cover %s", "opened" if cover else "closed")
                     if cover:
@@ -299,15 +363,20 @@ class Station:
                 self.sensors = {"paper": paper, "cover": cover}
                 if pressed:
                     self.run_scan(self.function)
+                    self.last_activity = time.time()
+                    self.update_display(everything=True)
                 elif inserted and self.scfg["trigger"] == "paper":
                     time.sleep(1.5)          # let the stack settle
                     self.run_scan(self.function)
+                    self.last_activity = time.time()
+                    self.update_display(everything=True)
                 elif self.settings_changed():
                     # Leave; systemd starts us again with the new settings (and the new token).
                     log.info("settings changed: restarting")
                     self.status.set(state="starting", error=None)
                     stop.set()
                 else:
+                    self.idle_tick()
                     stop.wait(0.2)
             except Exception as e:  # noqa: BLE001 (unplugged, power-cycled, …)
                 log.error("scanner connection lost: %s", e)
@@ -331,12 +400,14 @@ def main():
     stop, wake = threading.Event(), threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: (stop.set(), wake.set()))
-    up = threading.Thread(target=station.uploader_loop, args=(cfg, spool, stop, wake, status), name="upload", daemon=True)
+    stats = deliver.Stats(spool.root)
+    up = threading.Thread(target=station.uploader_loop, args=(cfg, spool, stop, wake, status, stats), name="upload", daemon=True)
     up.start()
     wake.set()
     threading.current_thread().name = "scan"
-    st = Station(cfg, spool, status, wake, stop,
-                 watch=(args.config, cfg["paperless"]["token_file"]))
+    secrets = [cfg["paperless"]["token_file"], {**deliver.SMB_DEFAULTS, **(cfg.get("smb") or {})}["password_file"],
+               {**deliver.EMAIL_DEFAULTS, **(cfg.get("email") or {})}["password_file"]]
+    st = Station(cfg, spool, status, wake, stop, stats, watch=(args.config, *secrets))
     try:
         st.loop()
     finally:

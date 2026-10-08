@@ -22,6 +22,10 @@ Start-button sensor are not tested.
   it). Without that file `sane_open` fails with an I/O error until something else has
   initialised the scanner. Run once on the device: 10 s, and a
   scan afterwards worked.
+- Display texts can also be changed while the scanner is open (options `label-1` … `label-7`); a
+  line break in the text starts small info lines under the title.
+- `--quiet=yes`: send nothing to the scanner while idle (events still arrive), so that it may go to
+  standby.
 - Each page is deskewed, cropped to the sheet and colour-corrected (`--swdeskew=no` keeps the
   angle, `--raw` delivers the untouched sensor image).
 

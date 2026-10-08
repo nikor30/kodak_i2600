@@ -16,9 +16,11 @@ Tested on one unit (i2600, firmware 1.2.15) on a Raspberry Pi 4. Experimental.
 | Modes | colour, gray, black/white at 300 dpi; both sides or front only; blank sides left out |
 | Speed | 6 s from Start to the uploaded PDF for one sheet, 9 s for three double-sided sheets |
 | Image | deskewed, cropped to the sheet, colour-corrected |
-| Delivery | Paperless-ngx REST API, with a local spool and retry while Paperless is offline |
+| Delivery | per profile: Paperless-ngx, a network share (SMB) or e-mail; local spool and retry while the destination is offline |
 | Power cycle | the station brings the scanner back by itself in about 23 s (needs a local power-up file, see below) |
-| Settings | a web page on the Pi (port 2600): Paperless address and token, buttons, profiles |
+| Display | the scanner's display shows the profile name, pages scanned today and in total, date and time |
+| Standby | after a set idle time the station stops talking to the scanner so that it can rest (see limitations) |
+| Settings | a web page on the Pi (port 2600): destinations, buttons, profiles, statistics |
 
 Details and next steps: [`memory/STATUS.md`](memory/STATUS.md) · the plan: [`PLAN.md`](PLAN.md) ·
 releases: <https://github.com/nikor30/kodak_i2600/releases>
@@ -96,6 +98,8 @@ settings page), [`backend/README.md`](backend/README.md) (the SANE backend, `sca
 - **The scanner feeds a whole stack by itself.** A SANE frontend that scans one page and closes loses the rest; use batch mode (`scanimage --batch`). The station does.
 - **Display text is plain ASCII** (no umlauts).
 - Deskew has only seen nearly straight sheets on the device; cancelling a scan inside a page is untested.
+- **Standby cannot be commanded.** The scanner's power requests are not decoded; the station can only go quiet and leave the scanner to its own power saving. Whether the scanner then sleeps, and wakes on Start, is still being observed.
+- Saving to a network share and sending e-mail are tested against local stand-ins only, not yet against a real NAS or mail provider.
 - The settings page is protected by one password over plain HTTP: use it on a network you trust.
 - Kodak's closed, x86-only driver is still needed once for setup (see above).
 
