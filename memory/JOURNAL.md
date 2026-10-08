@@ -121,3 +121,4 @@
 - LCD labels added to the C backend (F-074). Power-up replay in C deliberately postponed until the Python replay (untested, F-067) has passed a power cycle: porting it now would copy unverified logic.
 - 15:06 power cycle by the owner: **first native power-up, 10.1 s, no vendor fallback** (F-075); labels re-sent, station `ready`. Docs updated (commands.md section 6, station README no longer calls it untested). Open: a scan after it.
 - Second power cycle at 15:07:30 (native power-up 9.9 s). Owner: display blank afterwards (F-076, Q-032). Capture `power-up-2.pcap` of the first replay. Two Claude sessions were working in this tree at the same time (duplicate F-075, renumbered to F-076): check `git log` before numbering a finding.
+- Scan after native power-up confirmed (F-077); Button Press reports function 0, matching the blank LCD.
