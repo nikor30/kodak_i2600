@@ -87,3 +87,15 @@
 - Same day: OLED screensaver (owner request). After 30 s of `Ready` with an empty upload queue, kodak-oled shows a starfield with the IP bouncing over it (~10 fps, ≈1.8 % of one core, no I2C errors); any other state brings the status screen back. Config: `oled.screensaver`, `oled.screensaver_after`. Branch pushed to origin.
 - Same day: fan thermostat (owner asked for PWM; the HAT has none, F-040). `kodak_oled.py` now also switches the fan: on ≥ `fan.on_temp` (60 °C), off ≤ `fan.off_temp` (50 °C), on when the service stops. First test showed no effect because the HAT's fan switch was on always-on; owner flipped it, both directions then verified by temperature.
 - Same day: the screensaver now shows a second line with CPU temperature and fan state (e.g. `52°C · fan off`) under the bouncing IP (owner request).
+
+## 2026-10-08: Phase 2 starts on the Pi (owner: "crashes a lot and is costly", go for the native driver)
+- Wrote `tools/usbcap/` (binary usbmon → pcap + decoder, no dependencies) and captured the vendor driver under box64: idle poll, open, empty-feeder scan attempt (`captures/local/`, git-ignored; index in `captures/README.md`). ADR-013.
+- **The protocol is vendor control requests on EP0** (F-041); the idle poll is just GetStatus (F-042).
+- Found the wire-level code in `devicemanager.so` and read its name tables with `tools/re/elftables.py`: 69 request names, 32 interrupt event names, status field names (F-043). Notes in `re/linux-driver/devicemanager.md`; spec in `docs/protocol/commands.md` (new) and `transport.md` (framing section).
+- `tools/kdsprobe/` (ADR-014): first **native arm64 access** to the scanner, read-only `info`/`watch` (F-044). The serial number is readable (request `36`).
+- LCD: decoded LCDPopulate as a 128×48 bitmap (F-046) and uploaded our own bitmap for message type 4 id 1 (`kdsprobe.py lcd`); accepted, panel not looked at.
+- Re-read the 2026-09-28 power-up trace with the request names: Cypress FX2 firmware load + FPGA configuration + banked firmware (F-048).
+- The vendor driver rewrites NVRam and sets the clock on every open (F-047); our code does neither.
+- A 10-minute `kdsprobe.py watch` (scan services stopped) showed no event and no status change; the owner had been asked in chat to press buttons and load paper but did not answer, so most likely nobody was at the scanner. Q-024 stays open.
+- Scan services restarted afterwards; the vendor open re-uploads its own LCD message.
+- Journal on the Pi is volatile (only the current boot), so the owner's "crashes a lot" could not be traced in logs.

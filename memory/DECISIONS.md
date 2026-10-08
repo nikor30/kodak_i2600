@@ -55,3 +55,13 @@ Format: ID, date, context, decision, consequences. Never delete; supersede with 
 - **Context:** after a device I/O error the long-running saned/box64 process kept failing every open for ~29 h; a saned restart fixed it (F-038). kodak-scand is sandboxed (DynamicUser) and cannot call systemctl.
 - **Decision:** after 3 scanner errors in a row (no successful poll or scan in between) kodak-scand exits with status 75. `ExecStopPost=+…` in the unit restarts `kodak-saned.service` on that status; `Requires=` and `Restart=always` bring kodak-scand back. A time stamp in the spool (`saned-restart`) limits this to once per 10 minutes, so a switched-off scanner does not cause a restart loop.
 - **Consequences:** still only SANE between service and driver; with the native backend the same rule restarts whatever saned runs then. The root cause of F-038 stays open (Q-023).
+
+## ADR-013: Phase 2 capture runs on the Pi itself with usbmon; ADR-005's shim is dropped (2026-10-08)
+- **Context:** the owner wants the native driver now (the box64 stack is costly and unstable). The vendor driver already runs on the Pi, and the protocol turned out to be plain control requests (F-041), so raw URB captures are easy to read.
+- **Decision:** capture with `tools/usbcap/usbmon_capture.py` (binary usbmon → pcap, full payloads) while the vendor driver runs under box64, and name requests from the vendor's own tables (F-043). No libopenusb shim (it would need an x86 toolchain and gives no extra information). Supersedes ADR-005; answers Q-017 (yes).
+- **Consequences:** raw captures stay in `captures/local/` (git-ignored) because they contain firmware and scanned documents.
+
+## ADR-014: Native driver is grown from a Python prototype with a request whitelist (2026-10-08)
+- **Context:** the plan's target is a C SANE backend; the protocol is still being decoded and every new request must be tried against the only device we have.
+- **Decision:** `tools/kdsprobe/` (Python, ctypes + libusb-1.0) is the test bed. It refuses any request that `docs/protocol/commands.md` does not class as safe (`R` reads now; `W` once documented). The C backend in `backend/` is written from `docs/protocol/` when a sequence is proven there: first status/buttons/LCD, then scanning.
+- **Consequences:** never-send classes (`X`: NVRam/EEPROM/flash writes, firmware, calibration, diagnostics) stay out of both. The power-up firmware/FPGA load is unavoidable for a driver that must survive a power cycle; it needs its own decision (ADR to come) and a local firmware extraction step, since the images cannot be redistributed.
