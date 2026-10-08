@@ -4,6 +4,7 @@ _Last updated: 2026-10-08_
 
 **Current phase:** Phase 2 (protocol capture) + first native code, running on the Pi itself. The owner asked for the native ARM driver because the box64 station crashes often and is costly; the Phase 5 station (vendor driver under box64) stays in service meanwhile.
 **Known now:** commands are vendor control requests on EP0 (F-041), 69 request names (F-043), status block incl. paper/cover/function number (F-045, F-051), **button and panel events read natively** (F-051), scan start/stop sequence (F-052), **raw RGB image format** (F-053), LCD bitmap upload (F-046), SetTime (F-050), power-up firmware sequence (F-048).
+**First native scan done (F-056):** `tools/kdsprobe/native_scan.py` scans one sheet color 300 dpi duplex by replaying the captured start sequence; raw images only (no crop/deskew), and only on a scanner the vendor driver has initialised since power-up.
 **Not known yet:** the mode-dependent setup registers and config fields (Q-026), page ends / stream length (Q-028), LCD function labels (Q-025), power-up init for a native driver (Q-027).
 
 ## Done
@@ -15,8 +16,8 @@ _Last updated: 2026-10-08_
 - OLED status display on the PoE HAT (B): `kodak-oled.service` + status file from kodak-scand (ADR-011, F-037). Idle screensaver (starfield + bouncing IP). Fan thermostat in the same service (F-040; HAT fan switch must be in the programmable position). Installed 2026-10-01; not yet confirmed visually.
 
 ## Next actions (native driver)
-N1. Capture tool: add the usbmon drop counter (Q-028). Then captures with the owner feeding paper: 2 sheets color 300 duplex (page boundaries), gray 200 simplex via `scanimage` under box64 (smallest mode), 600 dpi.
-N2. Native scan attempt in `tools/kdsprobe/`: replay the captured setup for color 300 duplex (register writes + ScannerConfiguration + OperationStart) and read both pipes into PNGs. All requests involved must first be classed `W` in `commands.md`; ask the owner before the first run (it moves paper).
+N1. Multi-sheet native scan (page boundaries, trailer layout), then other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
+N2. Image post-processing for the native path: crop to the sheet, deskew, colour/white check against the vendor's output, blank-page detection; then PDF → the existing upload spool.
 N3. Native panel daemon (quick win for the owner's wish): events → Start button + function number → trigger the existing station profile; replaces the 2 s box64 poll. Needs a design decision with the owner (changes ADR-010; the vendor driver claims the interface while it is open).
 N4. LCD function labels (Q-025): owner's go-ahead needed (persistent write, format only known from vendor code).
 N5. Power-up capture (Q-027): start a capture, owner power-cycles the scanner, restart kodak-saned.

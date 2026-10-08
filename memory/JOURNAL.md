@@ -103,3 +103,4 @@
 - `kdsprobe.py watch` now enables events (`3a`): owner pressed ▲, ▼, Start, opened the cover, inserted paper; every action came through as an event and/or status change (F-051). Q-016 and Q-024 closed.
 - Owner: LCD shows only the stock `1` (F-055).
 - Slip: a wait loop with `pgrep -f` matched its own shell and hung, and a `pkill -f` killed the calling shell; the services were down a few minutes longer than planned. Use the task notification, not pgrep loops.
+- **First native scan** with the owner at the scanner (he said go): `native_scan.py`, replay of the captured color 300 duplex start, both sides complete (F-056). Station restarted afterwards.
