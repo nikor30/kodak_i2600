@@ -126,3 +126,4 @@
 - Owner confirmed the display after `16` (F-078, Q-032 closed). kodak-native sends it when `bButtonState` is 0; installed and restarted, automatic path awaits the next power cycle.
 - Third power cycle 15:17: native power-up + automatic SetSequenceNumber (F-079).
 - Owner confirmed the display after the automatic path (F-079). Power-up replay ported to C (F-080), timing facts added to commands.md section 6 first. Device test needs a power cycle with kodak-native stopped.
+- C power-up on the device with the owner (F-081): works, labels in the C font confirmed on the LCD. Follow-up scan blocked by `feeder empty` with a sheet loaded; to be checked.
