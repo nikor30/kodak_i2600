@@ -17,13 +17,20 @@ _Last updated: 2026-10-08_
 - Phase 5 (first version): `pi/scan-station/` = kodak-saned (saned under box64, localhost) + kodak-scand (auto-scan on paper → PDF → Paperless REST, spool + retry), ADR-010, F-035. Installed and enabled on the Pi; end to end verified with 3 color stacks uploaded to Paperless at `http://192.168.10.242:8000` (F-036).
 - OLED status display on the PoE HAT (B): `kodak-oled.service` + status file from kodak-scand (ADR-011, F-037). Idle screensaver (starfield + bouncing IP). Fan thermostat in the same service (F-040; HAT fan switch must be in the programmable position). Installed 2026-10-01; not yet confirmed visually.
 
+## C SANE backend (N6, started 2026-10-08)
+`backend/` builds `libsane-kodak_i2x00.so.1` (ADR-017, F-068). Works on the device: detect, open, options, sensors, empty-feeder `NO_DOCS`, busy detection. Offline tests pass on the saved 3-sheet streams (`make check`). **Not done yet: a real scan through the backend.** Not installed system-wide (`make testenv` + `LD_LIBRARY_PATH`/`SANE_CONFIG_DIR`).
+B1. **First scan (needs the owner):** `systemctl stop kodak-native`, owner loads 1 sheet, `cd backend && make testenv && LD_LIBRARY_PATH=$PWD/build SANE_CONFIG_DIR=$PWD/build/conf SANE_DEBUG_KODAK_I2X00=3 scanimage -d $(scanimage -f %d) --format=png --batch=/tmp/p%d.png`, expect 2 files and `batch finished: 1 sheets`; then 3 sheets, then Gray/Lineart/`ADF Front`, then `systemctl start kodak-native`.
+B2. Start-button sensor with the owner at the panel (`scanimage -A` after a press shows `--scan … [yes]`), cover/paper sensors.
+B3. Spool test: `memory-pages 0` and a stack; cancel inside a page (Q-031: does OperationStop stop the feeder?).
+B4. Then: power-up replay in C (section 6), LCD labels, deskew, `make install`, and a SANE-client station to replace kodak-native.
+
 ## Next actions (native driver)
 N1. (multi-sheet done, F-057) Other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
 N2. (image processing done, F-059) Next: verify the rear side with a double-sided sheet (Q-030); make processing faster (rotation); then one command/daemon that does native scan → process → spool, triggered by the Start button.
 N3. Native panel daemon (quick win for the owner's wish): events → Start button + function number → trigger the existing station profile; replaces the 2 s box64 poll. Needs a design decision with the owner (changes ADR-010; the vendor driver claims the interface while it is open).
 N4. LCD function labels (Q-025): owner's go-ahead needed (persistent write, format only known from vendor code).
 N5. **Test the native power-up (Q-027):** owner power-cycles the scanner; watch `journalctl -u kodak-native -f` for `loading its firmware natively` → `native power-up done` (or `failed` + vendor fallback), then scan one sheet. Capture it with `usbmon_capture.py` for comparison with `power-up-1`. If it misbehaves: move `/etc/kodak-scan/firmware/powerup.json` away and power-cycle again.
-N6. C SANE backend in `backend/` from `docs/protocol/` once N2 works (needs `libsane-dev`, `libusb-1.0-0-dev`).
+N6. C SANE backend: **started**, see the section above (`libsane-dev`, `libusb-1.0-0-dev`, `sane-utils` installed on the Pi 2026-10-08).
 
 ## Next actions (station, from before)
 0. Owner: check the PoE HAT OLED (IP on top, `Ready` below; `rotate: 180` in the `oled:` config if upside down) and feed a stack to see `Scanning page N` (ADR-011, F-037).
