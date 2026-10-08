@@ -59,8 +59,16 @@ void kds_split_free(struct kds_splitter *s);
 
 /* ---- image (kds_image.c) ---------------------------------------------------- */
 enum { KDS_MODE_COLOR, KDS_MODE_GRAY, KDS_MODE_LINEART, KDS_MODE_RAW };
-struct kds_crop { int x, y, w, h; };
-void kds_find_sheet(const uint8_t *raw, int lines, struct kds_crop *crop);
+/* Where the page is in a raw frame. Output pixel (i, j) is taken from the raw position
+ * (x0 + i*cs - j*sn, y0 + i*sn + j*cs). */
+struct kds_sheet {
+    int w, h;
+    double x0, y0, cs, sn;
+    double angle;           /* skew in radians, 0 = taken as it is */
+};
+void kds_full_frame(int lines, struct kds_sheet *s);
+void kds_find_sheet(const uint8_t *raw, int lines, int deskew, struct kds_sheet *s);
+void kds_sheet_line(const uint8_t *raw, int lines, const struct kds_sheet *s, int row, uint8_t *out);
 int kds_bytes_per_line(int mode, int w);
 /* w raw pixels -> one output line (kds_bytes_per_line() bytes) */
 void kds_convert_line(const uint8_t *raw, int w, int mode, int threshold, uint8_t *out);

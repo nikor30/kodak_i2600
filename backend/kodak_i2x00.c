@@ -40,6 +40,7 @@ enum {
     OPT_RESOLUTION,
     OPT_THRESHOLD,
     OPT_GROUP_ADVANCED,
+    OPT_SWDESKEW,
     OPT_RAW,
     OPT_GROUP_SENSORS,
     OPT_SCAN,
@@ -70,14 +71,15 @@ struct device {
 struct handle {
     struct kds_dev *dev;
     SANE_Option_Descriptor opt[NUM_OPTIONS];
-    int mode, source, threshold, raw;
+    int mode, source, threshold, raw, deskew;
     int pressed;            /* Start press not yet reported through the scan option */
 
     struct kds_seq seq;
     int batch;              /* a batch is running on the device */
     int next_side;
     struct kds_page *page;  /* the frame being read */
-    struct kds_crop crop;
+    struct kds_sheet sheet;
+    uint8_t *rawline;       /* one row of the sheet as raw RGB */
     int frame_mode, line;
     int eof;                /* the frame was read to its end */
     uint8_t *linebuf;
@@ -175,7 +177,8 @@ static void release_page(struct handle *h)
         kds_page_free(h->dev, h->page);
     h->page = NULL;
     free(h->linebuf);
-    h->linebuf = NULL;
+    free(h->rawline);
+    h->linebuf = h->rawline = NULL;
     h->linebuf_len = h->linebuf_pos = 0;
 }
 
@@ -267,10 +270,17 @@ static void init_options(struct handle *h)
     o->constraint.range = &threshold_range;
     o->cap |= SANE_CAP_INACTIVE;
 
+    o = &h->opt[OPT_SWDESKEW];
+    o->name = "swdeskew";
+    o->title = "Software deskew";
+    o->desc = "Straighten a sheet that was fed at an angle.";
+    o->type = SANE_TYPE_BOOL;
+    o->cap |= SANE_CAP_ADVANCED;
+
     o = &h->opt[OPT_RAW];
     o->name = "raw";
     o->title = "Raw sensor image";
-    o->desc = "Deliver the image as the scanner sends it: full sensor width, no crop, no colour correction.";
+    o->desc = "Deliver the image as the scanner sends it: full sensor width, no crop, no deskew, no colour correction.";
     o->type = SANE_TYPE_BOOL;
     o->cap |= SANE_CAP_ADVANCED;
 
@@ -308,6 +318,7 @@ static void init_options(struct handle *h)
     h->source = 1;
     h->threshold = 200;
     h->raw = 0;
+    h->deskew = 1;
 }
 
 /* ---- SANE API ------------------------------------------------------------------ */
@@ -459,6 +470,7 @@ EXPORT SANE_Status sane_kodak_i2x00_control_option(SANE_Handle handle, SANE_Int 
         case OPT_RESOLUTION: *(SANE_Word *)value = 300; break;
         case OPT_THRESHOLD: *(SANE_Word *)value = h->threshold; break;
         case OPT_RAW: *(SANE_Word *)value = h->raw; break;
+        case OPT_SWDESKEW: *(SANE_Word *)value = h->deskew; break;
         default:            /* sensors */
             if (kds_panel(h->dev, &panel) != KDS_OK)
                 return SANE_STATUS_IO_ERROR;
@@ -516,6 +528,9 @@ EXPORT SANE_Status sane_kodak_i2x00_control_option(SANE_Handle handle, SANE_Int 
             return SANE_STATUS_INVAL;
         h->threshold = i;
         break;
+    case OPT_SWDESKEW:
+        h->deskew = *(SANE_Word *)value != 0;
+        break;
     case OPT_RAW:
         h->raw = *(SANE_Word *)value != 0;
         if (info)
@@ -533,13 +548,13 @@ EXPORT SANE_Status sane_kodak_i2x00_get_parameters(SANE_Handle handle, SANE_Para
     if (!p)
         return SANE_STATUS_INVAL;
     int mode = h->page ? h->frame_mode : scan_mode(h);
-    int w = h->page ? h->crop.w : h->raw ? KDS_LINE_PX : A4_W;
+    int w = h->page ? h->sheet.w : h->raw ? KDS_LINE_PX : A4_W;
     p->format = mode == KDS_MODE_GRAY || mode == KDS_MODE_LINEART ? SANE_FRAME_GRAY : SANE_FRAME_RGB;
     p->depth = mode == KDS_MODE_LINEART ? 1 : 8;
     p->last_frame = SANE_TRUE;
     p->pixels_per_line = w;
     p->bytes_per_line = kds_bytes_per_line(mode, w);
-    p->lines = h->page ? h->crop.h : A4_H;      /* an estimate until the page has arrived */
+    p->lines = h->page ? h->sheet.h : A4_H;      /* an estimate until the page has arrived */
     return SANE_STATUS_GOOD;
 }
 
@@ -577,16 +592,18 @@ EXPORT SANE_Status sane_kodak_i2x00_start(SANE_Handle handle)
         h->next_side ^= 1;
     h->frame_mode = scan_mode(h);
     if (h->frame_mode == KDS_MODE_RAW) {
-        h->crop = (struct kds_crop){ 0, 0, KDS_LINE_PX, h->page->lines };
+        kds_full_frame(h->page->lines, &h->sheet);
     } else {
-        kds_find_sheet(h->page->data, h->page->lines, &h->crop);
-        kds_dbg(3, "sheet at %d,%d size %dx%d", h->crop.x, h->crop.y, h->crop.w, h->crop.h);
+        kds_find_sheet(h->page->data, h->page->lines, h->deskew, &h->sheet);
+        kds_dbg(3, "sheet at %.0f,%.0f size %dx%d, skew %.2f deg", h->sheet.x0, h->sheet.y0,
+                h->sheet.w, h->sheet.h, h->sheet.angle * 57.29578);
     }
     h->line = 0;
-    h->linebuf_len = kds_bytes_per_line(h->frame_mode, h->crop.w);
+    h->linebuf_len = kds_bytes_per_line(h->frame_mode, h->sheet.w);
     h->linebuf_pos = h->linebuf_len;
     h->linebuf = malloc((size_t)h->linebuf_len);
-    if (!h->linebuf) {
+    h->rawline = malloc((size_t)h->sheet.w * 3);
+    if (!h->linebuf || !h->rawline) {
         end_batch(h);
         return SANE_STATUS_NO_MEM;
     }
@@ -602,11 +619,10 @@ EXPORT SANE_Status sane_kodak_i2x00_read(SANE_Handle handle, SANE_Byte *buf, SAN
         return h->eof ? SANE_STATUS_EOF : SANE_STATUS_CANCELLED;
     while (*len < max_len) {
         if (h->linebuf_pos == h->linebuf_len) {
-            if (h->line >= h->crop.h)
+            if (h->line >= h->sheet.h)
                 break;
-            const uint8_t *raw = h->page->data
-                + ((size_t)(h->crop.y + h->line) * KDS_LINE_PX + (size_t)h->crop.x) * 3;
-            kds_convert_line(raw, h->crop.w, h->frame_mode, h->threshold, h->linebuf);
+            kds_sheet_line(h->page->data, h->page->lines, &h->sheet, h->line, h->rawline);
+            kds_convert_line(h->rawline, h->sheet.w, h->frame_mode, h->threshold, h->linebuf);
             h->linebuf_pos = 0;
             h->line++;
         }

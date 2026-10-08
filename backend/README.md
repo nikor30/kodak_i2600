@@ -6,17 +6,20 @@ only. No vendor code, no emulation.
 **State (2026-10-08): first version.** Built and tested offline against saved image streams;
 on the scanner, detection, open, options, the empty-feeder case and **color duplex scans of one sheet and of a 3-sheet stack**
 are tested, in Color, Gray and Lineart, duplex and front-only, and with all pages spooled to
-disk. Cancelling inside a page and the Start-button sensor are not.
+disk. Deskew is tested offline only (drawn sheets and a saved scan). Cancelling inside a page
+and the Start-button sensor are not tested.
 
 ## What it does
 - Finds the scanner, opens it, reads the panel: `--scan` (Start button pressed),
   `--function-number`, `--page-loaded`, `--cover-open`.
 - Scans color 300 dpi duplex by replaying the captured start sequence and delivers
   `Color`, `Gray` or `Lineart` (`--threshold`), `ADF Front` or `ADF Duplex`.
-- Each page is cropped to the sheet and colour-corrected (`--raw` turns both off).
+- Each page is deskewed, cropped to the sheet and colour-corrected (`--swdeskew=no` keeps the
+  angle, `--raw` delivers the untouched sensor image).
 
 ## What it does not do yet
-- No deskew, no blank-page removal, no resolution other than 300 dpi, no geometry options.
+- No blank-page removal, no rotation by 180° for sheets fed bottom first, no resolution other
+  than 300 dpi, no geometry options.
 - No power-up initialisation: after the scanner was switched off and on, `sane_open` fails
   with an I/O error until something else has loaded the firmware (the `kodak-native` service
   does that).

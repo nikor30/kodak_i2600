@@ -5,6 +5,8 @@
  *
  * The optional raw files are image streams saved from a real scan (local captures).
  */
+#define _GNU_SOURCE
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +19,7 @@ static int failures;
 struct got {
     int n, number[16], lines[16];
     uint8_t first[16];
-    struct kds_crop crop[16];
+    struct kds_sheet sheet[16];
     int find_sheet;
 };
 
@@ -29,7 +31,7 @@ static void on_page(void *arg, int number, uint8_t *data, int lines)
         g->lines[g->n] = lines;
         g->first[g->n] = data[0];
         if (g->find_sheet)
-            kds_find_sheet(data, lines, &g->crop[g->n]);
+            kds_find_sheet(data, lines, 1, &g->sheet[g->n]);
     }
     g->n++;
     free(data);
@@ -85,23 +87,61 @@ static void test_splitter(void)
     free(stream);
 }
 
+/* a white sheet of sw x sh pixels, centre (cx, cy), turned by deg, on a dark background */
+static uint8_t *draw_sheet(int lines, double cx, double cy, int sw, int sh, double deg)
+{
+    uint8_t *raw = calloc((size_t)lines, KDS_LINE);
+    double cs = cos(deg * M_PI / 180), sn = sin(deg * M_PI / 180);
+    for (int y = 0; y < lines; y++)
+        for (int x = 0; x < KDS_LINE_PX; x++) {
+            uint8_t *p = raw + ((size_t)y * KDS_LINE_PX + x) * 3;
+            double u = (x - cx) * cs + (y - cy) * sn, v = -(x - cx) * sn + (y - cy) * cs;
+            int paper = fabs(u) < sw / 2.0 && fabs(v) < sh / 2.0;
+            int mark = paper && u > -sw / 2.0 + 100 && u < -sw / 2.0 + 140 && v > -sh / 2.0 + 100 && v < -sh / 2.0 + 140;
+            p[0] = mark ? 60 : paper ? 229 : 3;
+            p[1] = mark ? 60 : paper ? 225 : 4;
+            p[2] = mark ? 60 : paper ? 245 : 2;
+        }
+    return raw;
+}
+
 static void test_image(void)
 {
     /* a "sheet" of 400 x 240 pixels at (800, 100) on a dark background */
     int lines = 480;
-    uint8_t *raw = calloc((size_t)lines, KDS_LINE);
-    for (int y = 0; y < lines; y++)
-        for (int x = 0; x < KDS_LINE_PX; x++) {
-            uint8_t *p = raw + ((size_t)y * KDS_LINE_PX + x) * 3;
-            int paper = x >= 800 && x < 1200 && y >= 100 && y < 340;
-            p[0] = paper ? 229 : 3;
-            p[1] = paper ? 225 : 4;
-            p[2] = paper ? 245 : 2;
-        }
+    uint8_t *raw = draw_sheet(lines, 1000, 220, 400, 240, 0);
     raw[(5 * KDS_LINE_PX + 5) * 3] = 255;      /* a speck must not widen the box */
-    struct kds_crop c;
-    kds_find_sheet(raw, lines, &c);
-    CHECK(c.x == 800 && c.y == 100 && c.w == 400 && c.h == 240, "crop %d,%d %dx%d", c.x, c.y, c.w, c.h);
+    for (int y = 0; y < 200; y++)               /* nor a bright stripe beside the sheet */
+        raw[((size_t)y * KDS_LINE_PX + 41) * 3 + 1] = 200;
+    struct kds_sheet c;
+    kds_find_sheet(raw, lines, 1, &c);
+    CHECK(c.x0 == 803 && c.y0 == 103 && c.w == 394 && c.h == 234 && c.angle == 0,
+          "sheet %.1f,%.1f %dx%d angle %f", c.x0, c.y0, c.w, c.h, c.angle);
+    uint8_t *row = malloc(KDS_LINE);
+    kds_sheet_line(raw, lines, &c, 0, row);
+    CHECK(row[0] == 229 && row[(c.w - 1) * 3 + 2] == 245, "unrotated row");
+    free(raw);
+
+    /* skewed A4-like sheets: the angle is found, the size is right, the mark lands where it was drawn */
+    static const double angles[] = { 0.8, -0.5, 2.0, 0.1 };
+    lines = 3900;
+    for (size_t i = 0; i < sizeof(angles) / sizeof(angles[0]); i++) {
+        raw = draw_sheet(lines, 1300, 1950, 2448, 3464, angles[i]);
+        kds_find_sheet(raw, lines, 1, &c);
+        double found = c.angle * 180 / M_PI, want = fabs(angles[i]) < 0.15 ? 0 : angles[i];
+        printf("skew %+.2f: found %+.3f, %dx%d\n", angles[i], found, c.w, c.h);
+        CHECK(fabs(found - want) < 0.03, "skew %.2f found %.3f", angles[i], found);
+        CHECK(abs(c.w - 2442) <= 8 && abs(c.h - 3458) <= 8, "skew %.2f: size %dx%d", angles[i], c.w, c.h);
+        if (want != 0) {
+            kds_sheet_line(raw, lines, &c, 117, row);
+            CHECK(row[3 * 117] < 100 && row[3 * 60] > 200 && row[3 * 170] > 200 && row[0] > 200 && row[3 * (c.w - 1)] > 200,
+                  "skew %.2f: row 117 = %d %d %d, ends %d %d", angles[i], row[3 * 60], row[3 * 117], row[3 * 170], row[0], row[3 * (c.w - 1)]);
+        }
+        kds_find_sheet(raw, lines, 0, &c);
+        CHECK(c.angle == 0, "deskew off");
+        free(raw);
+    }
+    free(row);
 
     uint8_t out[16], px[4 * 3] = { 229, 225, 245, 3, 4, 2, 60, 60, 60, 229, 225, 245 };
     kds_convert_line(px, 4, KDS_MODE_COLOR, 0, out);
@@ -114,7 +154,6 @@ static void test_image(void)
     CHECK(kds_bytes_per_line(KDS_MODE_LINEART, 2449) == 307 && kds_bytes_per_line(KDS_MODE_COLOR, 10) == 30, "bytes per line");
     kds_convert_line(px, 4, KDS_MODE_RAW, 0, out);
     CHECK(!memcmp(out, px, 12), "raw");
-    free(raw);
 }
 
 static void write_file(const char *path, const char *text)
@@ -183,8 +222,8 @@ static void test_stream(const char *path)
     fclose(f);
     printf("%s: %zu bytes, %d pages, %zu leftover lines\n", path, total, g.n, kds_split_leftover_lines(&s));
     for (int i = 0; i < g.n && i < 16; i++)
-        printf("  image %d: %d lines, sheet at %d,%d size %dx%d\n", g.number[i], g.lines[i],
-               g.crop[i].x, g.crop[i].y, g.crop[i].w, g.crop[i].h);
+        printf("  image %d: %d lines, sheet at %.0f,%.0f size %dx%d, skew %+.2f deg\n", g.number[i], g.lines[i],
+               g.sheet[i].x0, g.sheet[i].y0, g.sheet[i].w, g.sheet[i].h, g.sheet[i].angle * 180 / M_PI);
     CHECK(g.n > 0, "no page found");
     CHECK(kds_split_leftover_lines(&s) <= 50, "stream ends inside a page");
     kds_split_free(&s);
