@@ -137,3 +137,4 @@
 - Power cycle under kodak-sane (F-088): backend power-up 9.9 s, ready after 23 s.
 - Owner confirmed display and scan after the power cycle under kodak-sane (F-088). Open device tests of the backend unchanged: deskew on a visibly skewed sheet, cancel inside a page (Q-031).
 - Release v0.3.0 on the owner's request: station on the C SANE backend.
+- Owner asked for an updated README and a web page for the station's settings. README rewritten; `kodak_web.py` + `kodak-web.service` built, installed and tested over HTTP (ADR-019, F-089); kodak-sane restarts itself on settings changes. Slip: the first connection test asked `/api/`, which redirects for everyone; fixed to ask the upload address.

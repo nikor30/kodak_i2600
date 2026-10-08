@@ -17,6 +17,9 @@ _Last updated: 2026-10-08_
 - Phase 5 (first version): `pi/scan-station/` = kodak-saned (saned under box64, localhost) + kodak-scand (auto-scan on paper → PDF → Paperless REST, spool + retry), ADR-010, F-035. Installed and enabled on the Pi; end to end verified with 3 color stacks uploaded to Paperless at `http://192.168.10.242:8000` (F-036).
 - OLED status display on the PoE HAT (B): `kodak-oled.service` + status file from kodak-scand (ADR-011, F-037). Idle screensaver (starfield + bouncing IP). Fan thermostat in the same service (F-040; HAT fan switch must be in the programmable position). Installed 2026-10-01; not yet confirmed visually.
 
+## Settings page (2026-10-08)
+`kodak-web.service`, port 2600, user `admin`, password in `/etc/kodak-scan/web-password` (ADR-019, F-089). Server and API tested; **the owner has not opened it in a browser yet**. Root README rewritten for the current state.
+
 ## C SANE backend (N6, started 2026-10-08)
 `backend/` builds `libsane-kodak_i2x00.so.1` (ADR-017, F-068). Works on the device: detect, open, options, sensors, empty-feeder `NO_DOCS`, busy detection. Offline tests pass on the saved 3-sheet streams (`make check`). **Real scans done: one sheet (F-069), a 3-sheet stack in color (F-070) and in Gray with all pages spooled to disk (F-071), 6 frames in 9 s.** Not installed system-wide (`make testenv` + `LD_LIBRARY_PATH`/`SANE_CONFIG_DIR`).
 B1. (1 sheet and 3 sheets color duplex done, F-069, F-070.) Gray, spooling, Lineart and `ADF Front` done (F-071, F-072). All scan modes of the backend have now run on the device. Procedure: `systemctl stop kodak-native`, owner loads paper without pressing Start, `cd backend && make testenv && LD_LIBRARY_PATH=$PWD/build SANE_CONFIG_DIR=$PWD/build/conf SANE_DEBUG_KODAK_I2X00=3 scanimage -d $(scanimage -f %d) --format=png --batch=/tmp/p%d.png`, expect 2 files and `batch finished: 1 sheets`; then 3 sheets, then Gray/Lineart/`ADF Front`, then `systemctl start kodak-native`.
