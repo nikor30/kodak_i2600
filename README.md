@@ -7,14 +7,19 @@ vendor software runs while it scans.
 
 ## Status
 
-Version 1.0. Tested on one unit (i2600, firmware 1.2.15) on a Raspberry Pi 4; see the limitations below.
+**Version 1.0 runs on a native driver.** The scanner is driven by `kodak_i2x00`, a SANE backend
+written in C for this project from our own protocol documentation. It loads the scanner's
+firmware after power-on, reads the panel, writes the display, scans, and prepares the pages.
+Kodak's driver is not involved in scanning; it is only needed once at setup (see below).
+
+Tested on one unit (i2600, firmware 1.2.15) on a Raspberry Pi 4; see the limitations below.
 
 | | |
 |---|---|
 | Driver | our own C SANE backend `kodak_i2x00` (`backend/`), written from the protocol documentation in `docs/protocol/` |
 | Trigger | the scanner's **Start button**; ▲/▼ choose a profile, the scanner's display shows its name |
 | Modes | colour, gray, black/white at 300 dpi; both sides or front only; blank sides left out |
-| Speed | 6 s from Start to the uploaded PDF for one sheet, 9 s for three double-sided sheets |
+| Speed | 6 s from Start to the delivered PDF for one sheet, 9 s for three double-sided sheets |
 | Image | deskewed, cropped to the sheet, colour-corrected |
 | Delivery | per profile: Paperless-ngx, a network share (SMB) or e-mail; local spool and retry while the destination is offline |
 | Power cycle | the station brings the scanner back by itself in about 23 s (needs a local power-up file, see below) |
@@ -24,6 +29,29 @@ Version 1.0. Tested on one unit (i2600, firmware 1.2.15) on a Raspberry Pi 4; se
 
 Details and next steps: [`memory/STATUS.md`](memory/STATUS.md) · the plan: [`PLAN.md`](PLAN.md) ·
 releases: <https://github.com/nikor30/kodak_i2600/releases>
+
+## Screenshots
+
+The settings page, with example data.
+
+**Destinations**: where scans go, each with a test button. Passwords and the token can be set
+but are never shown again.
+
+![Settings page: station state, Paperless, network share and e-mail](docs/images/settings-destinations.png)
+
+**Buttons and profiles**: which profile is on which function number of the scanner, what the
+scanner's display says, and how each profile scans and where it sends.
+
+![Settings page: buttons and profiles](docs/images/settings-buttons-profiles.png)
+
+**Statistics**
+
+![Settings page: statistics](docs/images/settings-statistics.png)
+
+**The scanner's display** (a rendering of the 128 × 48 bitmap the driver uploads, not a photo):
+the profile's text, pages scanned today and in total, date and time.
+
+![Rendering of the scanner's display](docs/images/display-rendering.png)
 
 ## How it works
 
@@ -88,6 +116,7 @@ settings page), [`backend/README.md`](backend/README.md) (the SANE backend, `sca
 | `pi/scan-station/` | station services, settings page, systemd units, installer, config example |
 | `pi/phase1/` | x86 chroot + Kodak driver setup, box64 build and patch, diagnostics |
 | `docs/protocol/` | the USB protocol as far as it is known: the only source the backend is written from |
+| `docs/images/` | screenshots for this README (example data) |
 | `tools/` | USB capture and decoding (`usbcap`), a protocol probe (`kdsprobe`) |
 | `memory/` | project memory: status, journal, findings (with sources), decisions (ADRs), open questions |
 | `re/`, `captures/` | reverse-engineering notes; index of USB captures (the captures themselves stay local) |
