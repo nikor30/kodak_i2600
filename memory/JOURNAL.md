@@ -116,3 +116,4 @@
 - First scan through the C backend with the owner (F-069). Before it, the owner's first sheet was taken by kodak-native because Start was pressed (job `20261008-143956-5bdefe`, uploaded); for backend tests the owner loads paper without pressing Start.
 - 3-sheet stack through the C backend (F-070). Test scans went to session temp files only and were deleted after viewing (they contained the owner's documents).
 - Gray stack with forced spooling through the C backend (F-071); temp scans deleted.
+- Lineart + front-only stack through the C backend (F-072); temp scans deleted. Open on the device: B2 (Start-button sensor) and B3 (cancel inside a page, Q-031).
