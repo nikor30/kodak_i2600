@@ -18,9 +18,10 @@ METERS = 0x33
 EOL_CONFIGURATION = 0x34
 SERIAL_NUMBER = 0x36
 LCD_POPULATE = 0x62
+INTERRUPT_EVENT_CONTROL = 0x3A
 
 READ_SAFE = {GET_STATUS, GET_FW_VERSIONS, METERS, EOL_CONFIGURATION, SERIAL_NUMBER}
-WRITE_SAFE = {LCD_POPULATE}
+WRITE_SAFE = {LCD_POPULATE, INTERRUPT_EVENT_CONTROL}
 
 LCD_W, LCD_H = 128, 48          # LCDPopulate bitmap: 6 pages of 128 column bytes, bit 0 = top row
 LCD_MSG_DISCONNECTED = (4, 1)   # (type, id) of the one message the vendor driver uploads on every open
@@ -101,6 +102,10 @@ class Device:
         msg_type, msg_id = msg
         self.set(LCD_POPULATE, (msg_id << 8) | msg_type, ((LCD_H // 8) << 8) | LCD_W, bitmap)
 
+    def events(self, on):
+        """Switch interrupt events on/off (as captured: wValue 1, wIndex 1 = on / 0 = off)."""
+        self.set(INTERRUPT_EVENT_CONTROL, 1, 1 if on else 0)
+
     def claim(self):
         if not self.claimed:
             self._check(self.lib.libusb_claim_interface(self.h, 0), "claim interface 0")
@@ -145,3 +150,15 @@ def lcd_rows(bitmap):
     """Inverse of lcd_bitmap(): 768 bytes -> list of LCD_H strings of '#'/' '."""
     return ["".join("#" if bitmap[(y // 8) * LCD_W + x] >> (y % 8) & 1 else " " for x in range(LCD_W))
             for y in range(LCD_H)]
+
+
+EVENT_NAMES = {
+    0x00: "Dummy", 0x01: "End of Operation", 0x02: "Start of Operation", 0x03: "Ding",
+    0x10: "Power State", 0x11: "Buffer State", 0x12: "Transport State", 0x13: "Tray State",
+    0x14: "Udds State", 0x15: "Lamp State", 0x16: "Interlock State", 0x17: "Carriage State",
+    0x18: "Scanner State", 0x19: "Elevator State", 0x1A: "S0 Sensor State", 0x20: "Button Press",
+    0x30: "Paper Jam", 0x31: "Multifeed", 0x32: "Buffer Overflow", 0x33: "Print Rollover",
+    0x34: "Other Error", 0x40: "Notification Offset", 0x41: "Page Exit", 0x42: "Imaging Complete",
+    0x43: "Mini Cal Paused", 0x44: "Setup Pause", 0x50: "Patch Detected", 0x51: "Patch Pause",
+    0x52: "DSP Reply", 0x60: "Screen Missing", 0xF0: "Debug", 0xF1: "Trace Log",
+}

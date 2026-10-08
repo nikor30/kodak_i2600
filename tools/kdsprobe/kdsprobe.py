@@ -36,12 +36,22 @@ def cmd_watch(dev, args):
     t0 = time.time()
     prev = None
     next_status = 0
-    print("watching; times in seconds", flush=True)
+    dev.claim()
+    dev.events(True)
+    print("watching (events enabled); times in seconds", flush=True)
+    try:
+        watch_loop(dev, args, t0, prev, next_status)
+    finally:
+        dev.events(False)
+
+
+def watch_loop(dev, args, t0, prev, next_status):
     while not args.seconds or time.time() - t0 < args.seconds:
         for ep in (k.EP_INT_A, k.EP_INT_B):
             ev = dev.read_interrupt(ep, timeout=100)
             if ev:
-                print(f"{time.time() - t0:8.2f} event ep{ep & 15} {ev.hex(' ')}", flush=True)
+                name = k.EVENT_NAMES.get(ev[0], "?")
+                print(f"{time.time() - t0:8.2f} event ep{ep & 15} {ev.hex(' ')}  {name}", flush=True)
         if time.time() >= next_status:
             next_status = time.time() + 0.5
             raw = dev.get(k.GET_STATUS, 32)

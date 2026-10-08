@@ -1,11 +1,13 @@
 # Command layer
 
-Status: **request table and status block known; scan sequence and event payloads still to be captured.**
+Status: **request table, status block, events, panel read-out, scan start/stop and raw image format known; per-mode setup registers, page end and power-up init still open.**
 Last updated 2026-10-08. Every statement names its source; "hyp." marks a hypothesis.
 
 Sources
 - `C:` captures made on the Pi with `tools/usbcap/` (vendor driver under box64, firmware 1.2.15):
-  `idle-poll-10s`, `open-A`, `scan-empty-gray200` (local, not committed: see `captures/README.md`).
+  `idle-poll-10s`, `open-A`, `scan-empty-gray200`, `station-scan-1` (one sheet, color 300 dpi duplex)
+  (local, not committed: see `captures/README.md`).
+- `W:` `kdsprobe.py watch` with the owner pressing buttons (`captures/local/watch-2.txt`, 2026-10-08).
 - `T:` the truncated text trace of a power-up open, `pi/phase1/phase1-trace-20260928-205802/usbmon-bus1.txt`.
 - `N:` name tables of the vendor `devicemanager.so` (`re/linux-driver/devicemanager.md`).
 - `P:` our own read-only probe, `tools/kdsprobe/`.
@@ -44,18 +46,18 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 | `03` | GetMachineConstants | C: IN 32 | R | |
 | `09` | GetEventLog | – | ? | |
 | `0a` | TraceLog | – | ? | |
-| `10` | OperationStartStop | – | ? | expected in a real scan |
-| `11` | SetLamp | C: OUT v=0 len 0 | ? | |
+| `10` | OperationStartStop | C: OUT len 0, v=1 start / v=0 stop | ? | section 8 |
+| `11` | SetLamp | C: OUT len 0, v=1 before a scan, v=0 on open and ~28 s after a scan | ? | |
 | `12` | SetButtonMode | – | ? | |
 | `13` | AddEventToLog | – | X | writes the device log |
 | `14` | ClearEventLog | – | X | |
 | `15` | BatchPauseResume | – | ? | |
 | `16` | SetSequenceNumber | C: OUT v=0001 i=0007 len 0 | ? | vendor name "button sequence number" (N); hyp.: the function number shown on the LCD (v) and its maximum (i) |
-| `17` | StartCapture | – | ? | OUT len 0, one u16 argument in wValue, wIndex 0 (N) |
+| `17` | StartCapture | C: OUT len 0, v=3 | ? | used for the short pre-scan capture only (section 8) |
 | `18` | SetAutoWhite | T: OUT len 4 | ? | |
 | `19` | SetOCPMode | – | ? | |
 | `1a` | HomeCamera | – | ? | flatbed |
-| `1b` | Ring | – | ? | |
+| `1b` | Ring | C: OUT v=0 len 0, right after events are enabled | ? | answered by two Ding events (`03`, values 1 and 2) |
 | `1c` | ElevatorStartStop | – | ? | not on the i2600 |
 | `1d` | ClearImageBuffer | – | ? | |
 | `1e` | BatchBeginEnd | – | ? | |
@@ -65,17 +67,17 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 | `22` | Disconnect | – | ? | |
 | `23` | SubsystemFwUpdate | – | X | |
 | `24` | BulkDownload | – | X | |
-| `30` | ScannerConfiguration | – | ? | expected in a real scan |
-| `31` | EnergyStar | – | ? | |
-| `32` | LampTimeout | C: IN 2 = `0e 3c` | R | |
+| `30` | ScannerConfiguration | C: OUT 120 bytes | ? | section 8 |
+| `31` | EnergyStar | C: OUT 1 byte `01` before a scan | ? | |
+| `32` | LampTimeout | C: IN 2 = `0e 3c`; OUT the same 2 bytes before a scan | R | |
 | `33` | Meters | C, P: IN 20 | R | five u32 LE counters; meanings open |
 | `34` | EOLConfiguration | C, P: IN 55 | R | VID, PID, vendor and product strings |
 | `35` | NVRam | C: IN 128, IN 256 (v=1), **OUT 128** | R / X | the vendor driver rewrites it on every open; we do not write |
 | `36` | SerialNumber | C, P: IN 16 ASCII | R | `0000000049374377` on the owner's unit |
-| `37` | VRam | C: IN 64 | R | |
+| `37` | VRam | C: IN 64; OUT 64 (same content) before a scan | R | |
 | `38` | ElevatorLoadPosition | – | ? | |
 | `39` | SetPower | – | ? | |
-| `3a` | InterruptEventControl | – | ? | OUT len 0, wValue = number of interrupt endpoints (2 on this family), wIndex = 1 enable / 0 disable (N: argument order of the vendor wrapper + its device database). Not sent on a warm open or an empty-feeder poll; the vendor enables events when a scan runs and during power-up init |
+| `3a` | InterruptEventControl | C, P: OUT len 0, **wValue 1, wIndex 1 = on / 0 = off** | W | off by default. (The vendor code suggested wValue = number of interrupt endpoints = 2; the wire shows 1.) |
 | `3b` | Background | – | ? | |
 | `3c` | UDDS Calibration | – | X | ultrasonic multifeed sensor calibration |
 | `3e` | SendError | – | ? | |
@@ -85,7 +87,7 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 | `42` | PDMD | – | ? | |
 | `43` | DSP | – | ? | |
 | `44` | PdmdLED | – | ? | |
-| `45` | BatchData | C: IN 3 = `02 00 00` | R | |
+| `45` | BatchData | C: IN 3 = `02 00 00`; OUT `01 00 02` before a scan, `02 00 00` after | R | |
 | `50` | Printer | – | ? | imprinter, not fitted |
 | `5f` | OCPLEDControl | – | ? | |
 | `62` | LCDPopulate | C, P: OUT v=0104 i=0680 len 768 | W (type 4 id 1 only) | LCD message bitmap, section 7 |
@@ -130,11 +132,11 @@ Example (idle, feeder empty, LCD showing `1`):
 | 12 | 1 | bPowerState | `03` | |
 | 13 | 1 | bBufferState | `01` | |
 | 14 | 1 | bTransportState | `00` | |
-| 15 | 1 | bTrayState | `01` | hyp.: paper present / absent |
-| 16 | 1 | bUddsState | `02` | |
+| 15 | 1 | bTrayState | `01` | **`01` = feeder empty, `02` = paper in the feeder** (W, P) |
+| 16 | 1 | bUddsState | `02` | `01` while the cover is open (W) |
 | 17 | 2 | wLampState | `00 00` | |
-| 19 | 1 | bInterlockState | `01` | hyp.: cover closed |
-| 20 | 1 | bButtonState | `01` | hyp.: function number on the LCD |
+| 19 | 1 | bInterlockState | `01` | **`01` = cover closed, `02` = open** (W) |
+| 20 | 1 | bButtonState | `01` | **the function number shown on the LCD** (W: ▲ → 2, ▼ → 1) |
 | 21 | 1 | bPrintHeadState | `00` | |
 | 22 | 1 | bPrinterState | `00` | |
 | 23 | 1 | bFrontCameraState | `01` | |
@@ -142,15 +144,33 @@ Example (idle, feeder empty, LCD showing `1`):
 | 25 | 1 | bCarriageState | `00` | |
 | 26 | 1 | bLampIntensityState | `ff` | |
 | 27 | 1 | bErrorCode | `00` | |
-| 28 | 4 | – | `00` | |
+| 28 | 4 | – | `00` | byte 28 read `02` in one poll right after ▲ (W); meaning open |
 
-The field offsets from 12 on are a fit (medium confidence) until a state change is observed
-for each of them.
+Tray, interlock and button offsets are confirmed by observed changes; the others are still a fit.
 
 ## 4. Interrupt events (EP `0x81`, `0x88`)
 
-8-byte messages; the vendor logs them as eight bytes and names them by an event id (N). Which
-byte carries the id and what the other bytes mean is **open** (no event captured yet).
+8-byte messages, **all on EP `0x88`** (C, W; nothing seen on `0x81`), only while events are enabled
+with request `3a`. Layout: **byte 0 = event id, byte 2 = new state / value**, bytes 1 and 3–4 carry
+extra data for some events, the rest is zero. Names are the vendor's (N).
+
+Observed (C = during the scan, W = owner at the panel):
+
+| Bytes | Meaning |
+|---|---|
+| `60 00 nn 01 …` | function number changed to `nn` by ▲/▼ (W). Also sent with the current number when the scanner returns to idle (C). The vendor table calls id `60` "Screen Missing" |
+| `20 01 nn 00 …` | **Start button pressed** while function `nn` is selected (W) |
+| `13 00 02` / `13 00 01` | Tray State: paper inserted (W) / feeder ran empty (C) |
+| `16 00 02` / `16 00 01` | Interlock State: cover opened / closed (W) |
+| `03 00 01`, `03 00 02` | Ding, after request `1b` Ring (C) |
+| `10 00 04` / `10 00 03` | Power State: 4 while an operation runs, 3 when idle (C) |
+| `02 00 00` | Start of Operation (C) |
+| `12 00 01`, `12 00 02`, `12 00 00` | Transport State: starting, running, stopped (C; names hyp.) |
+| `42 00 00 00 nn` | Imaging Complete, `nn` = image count so far (C: 1 after the pre-scan capture, 2 after the sheet) |
+| `01 rr ss 00 nn` | End of Operation (C: `01 00 00 00 00` after the pre-scan; `01 05 01 00 01` when the feeder ran empty after 1 sheet; `rr`/`ss` meanings open) |
+| `15 00 00` | Lamp State: off, ~28 s after the scan (C) |
+
+All known ids:
 
 | Id | Name | Id | Name |
 |---|---|---|---|
@@ -233,3 +253,38 @@ driver performs on every open.
 - SetSequenceNumber (`40 16`, wValue 1, wIndex 7 on every open): the vendor wrapper is called
   "set button sequence number" and takes two u16 (N). Hyp.: wValue = number to show, wIndex = highest
   selectable number.
+
+## 8. Scanning (C: `station-scan-1`, color 300 dpi duplex, one A4 sheet)
+
+Order of requests after the usual open, with paper in the feeder:
+
+1. `3a` events on, `1b` Ring, `32`/`31` power settings, `11` SetLamp 1, `45` BatchData `01 00 02`, `37` VRam write-back.
+2. **Mode setup through registers**: ~50 `a3` writes (addresses `d9xx…ddxx`) and ~75 `e0` AFE writes, with
+   read-backs, in 0.7 s. These depend on mode/resolution and are **not decoded**; other modes need their own capture.
+3. `30` ScannerConfiguration (120 bytes, pre-scan variant) → `10` v=1 → events Power State 4, Start of
+   Operation → `17` StartCapture v=3 → **154,948 bytes on each image pipe** (20 lines + 148 bytes; no paper
+   moves: a capture of the background, the vendor's "baffle" scan) → `10` v=0 → Imaging Complete, End of Operation.
+4. Six more `a3` writes, `30` ScannerConfiguration (scan variant) → `10` v=1. **No StartCapture**: the
+   scanner feeds by itself. Events: Transport 1, 2, Start of Operation; image data starts ~0.1–0.3 s later.
+5. Host reads both image pipes with 16,384-byte bulk requests until the feeder is empty: Tray State 1,
+   Imaging Complete, Transport 0, End of Operation. The vendor then cancels its pending bulk reads. No control
+   requests are sent while the sheet is scanned.
+6. ~28 s later: `11` SetLamp 0, `45` BatchData `02 00 00`, `3a` events off.
+
+### ScannerConfiguration (`40 30`, 120 bytes)
+Mostly zero. The two variants differ only in bytes 1–2 (`00 01` pre-scan / `01 00` scan), byte 32
+(`00` / `04`), byte 48 (`02` / `01`) and byte 54 (`33` / `03`). Common non-zero fields (u16 LE where two
+bytes): offset 6 `0e5d` (3677), 10 `02fa` (762), 13–16 and 18–21 `0377`, `0170` (887, 368), 40 `0c36`
+(3126), 42 `0c54` (3156), 50 and 52 `00c5` (197), 55 `0f`, 56 `01`. Field meanings are **open**.
+
+### Image data (EP `0x82` front, `0x86` rear)
+- **Uncompressed 8-bit RGB, pixel-interleaved, 2,580 pixels = 7,740 bytes per line**, top line first, no
+  line or block headers (the two streams render as correct pictures of the sheet when cut every 7,740 bytes).
+  2,580 px at 300 dpi = 8.6 inch: the full sensor width, with black background left and right of the sheet.
+- The scanner sends raw sensor lines: black background above/below the sheet, slight colour cast, no crop,
+  no deskew. Cropping, deskew, colour correction and blank-page detection are host work (the vendor's hippo).
+- The rear stream starts ~0.2 s before the front one.
+- The pre-scan block ends with tagged trailer bytes (`… 00 38 01 ff`); layout open.
+- **Open:** how a page ends inside a multi-sheet batch, and whether the front stream of this capture is
+  complete: it has 3,113 lines against 3,708 on the rear, so either the capture lost bulk data or the
+  streams are not equally long.
