@@ -4,8 +4,8 @@ A SANE backend in C for the Kodak i2600 (USB `040a:601d`), written from `docs/pr
 only. No vendor code, no emulation.
 
 **State (2026-10-08): first version.** Built and tested offline against saved image streams;
-on the scanner, detection, open, options and the empty-feeder case are tested. **A real scan
-through this backend has not been made yet.**
+on the scanner, detection, open, options, the empty-feeder case and **one sheet in color duplex**
+are tested. Stacks, Gray/Lineart on the device, spooling and cancelling are not.
 
 ## What it does
 - Finds the scanner, opens it, reads the panel: `--scan` (Start button pressed),
