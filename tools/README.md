@@ -1,3 +1,10 @@
 # Tools
 
-Planned: `libusb-logger/` (LD_PRELOAD shim), `decode/` (pcap → command log), `wireshark/` (Lua dissector), `mockdev/` (replay device for tests).
+| Dir | What |
+|---|---|
+| `phase0/` | hardware info collection |
+| `usbcap/` | `usbmon_capture.py` (full-payload capture from `/dev/usbmonN` into pcap, no dependencies) and `usbmon_decode.py` (pcap → transfer log / summary) |
+| `re/` | `elftables.py`: read id→name tables out of the vendor libraries |
+| `kdsprobe/` | native, read-only access to the scanner over libusb (no vendor driver): `kdsprobe.py info`, `kdsprobe.py watch`. Sends only requests classified as safe in `docs/protocol/commands.md` |
+
+Planned: `mockdev/` (replay device for backend tests).
