@@ -13,8 +13,7 @@ in its image library. Reference implementation: `tools/kdsprobe/kds_image.py` (n
   The vendor resamples to 300 dpi (2487 × 3511); we keep the pixels and write 296.1 dpi into the file
   (page size comes out as 209.5 × 297.0 mm).
 - Front and rear show the same sheet with opposite skew sign and mirrored horizontal position, as expected
-  for a true view from each side: the front is readable as sent; **the rear orientation is not yet
-  verified with a printed back side.**
+  for a true view from each side: both sides are readable as sent (verified with a sheet printed on both sides): no flip or mirror is needed.
 
 ## Steps
 1. **Split** each side's stream into pages at the trailers; pair front/rear by the image number in the trailer.
