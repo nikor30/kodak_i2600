@@ -192,6 +192,20 @@ static void test_lcd(int show)
     CHECK(lcd_rows_used(bm, 0, 8) && lcd_rows_used(bm, 16, 24) && !lcd_rows_used(bm, 24, 48), "three small lines expected");
     kds_lcd_text("", bm);
     CHECK(!lcd_rows_used(bm, 0, 48), "empty text");
+    /* title + info lines: the two info lines sit in the bottom 16 rows, the title stays large above */
+    kds_lcd_text("Paperless Color\nToday 12  Total 1234\nThu 08.10.2026 16:42", bm);
+    CHECK(lcd_rows_used(bm, 0, 16) && lcd_rows_used(bm, 16, 32) && lcd_rows_used(bm, 32, 40) && lcd_rows_used(bm, 40, 48), "title + 2 info lines");
+    CHECK(lcd_pixel(bm, 4, 0) && lcd_pixel(bm, 5, 1), "title is large (2x2 pixel blocks)");
+    if (show)
+        for (int y = 0; y < 48; y++) {
+            for (int x = 0; x < KDS_LCD_W; x++)
+                putchar(lcd_pixel(bm, x, y) ? '#' : '.');
+            putchar('\n');
+        }
+    kds_lcd_text("A much longer title that cannot be large\ninfo", bm);     /* title shrinks, info stays */
+    CHECK(lcd_rows_used(bm, 40, 48) && lcd_rows_used(bm, 0, 8), "long title with info");
+    kds_lcd_text("Title\n1\n2\n3\n4\n5\n6\n7", bm);                   /* too many info lines must not overflow */
+    CHECK(lcd_rows_used(bm, 40, 48), "many info lines");
     kds_lcd_text("\xc3\xa4", bm);       /* non-ASCII becomes '?' and must not crash */
     CHECK(lcd_rows_used(bm, 0, 16), "non-ASCII");
 }

@@ -18,8 +18,8 @@ die() { printf '\033[1;31m[scan-station] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
 
 if [ "${1:-}" = "--remove" ]; then
-  systemctl disable --now kodak-oled.service kodak-sane.service kodak-native.service kodak-scand.service kodak-saned.service 2>/dev/null || true
-  rm -f /etc/systemd/system/kodak-sane.service /etc/systemd/system/kodak-native.service /etc/systemd/system/kodak-oled.service /etc/systemd/system/kodak-scand.service /etc/systemd/system/kodak-saned.service
+  systemctl disable --now kodak-web.service kodak-oled.service kodak-sane.service kodak-native.service kodak-scand.service kodak-saned.service 2>/dev/null || true
+  rm -f /etc/systemd/system/kodak-web.service /etc/systemd/system/kodak-sane.service /etc/systemd/system/kodak-native.service /etc/systemd/system/kodak-oled.service /etc/systemd/system/kodak-scand.service /etc/systemd/system/kodak-saned.service
   rm -rf "$LIB"
   systemctl daemon-reload
   log "removed (kept $ETC and /var/lib/private/kodak-scan)"
@@ -31,7 +31,7 @@ fi
 
 log "Installing packages"
 apt-get install -y --no-install-recommends python3-sane python3-pil python3-requests python3-yaml img2pdf libsane1 \
-  python3-smbus2 python3-numpy libusb-1.0-0 fonts-dejavu-core >/dev/null
+  python3-smbus2 python3-numpy libusb-1.0-0 fonts-dejavu-core python3-ruamel.yaml smbclient >/dev/null
 
 # OLED on the PoE HAT (B): needs I2C (dtparam=i2c_arm=on + i2c-dev), which raspi-config sets up.
 if [ ! -e /dev/i2c-1 ] && command -v raspi-config >/dev/null; then
@@ -44,13 +44,15 @@ grep -qx '127.0.0.1' "$ROOT/etc/sane.d/saned.conf" || echo 127.0.0.1 >>"$ROOT/et
 
 log "Installing $LIB and the systemd units"
 install -d "$LIB/sane.d"
-install -m 755 "$HERE/kodak_scand.py" "$HERE/kodak_oled.py" "$HERE/kodak_native.py" "$HERE/kodak_sane.py" "$LIB/"
-install -m 644 "$HERE/kds_usb.py" "$HERE/kds_scan.py" "$HERE/kds_image.py" "$LIB/"
+install -m 755 "$HERE/kodak_scand.py" "$HERE/kodak_oled.py" "$HERE/kodak_native.py" "$HERE/kodak_sane.py" "$HERE/kodak_web.py" "$LIB/"
+install -d "$LIB/web"
+install -m 644 "$HERE"/web/* "$LIB/web/"
+install -m 644 "$HERE/kds_usb.py" "$HERE/kds_scan.py" "$HERE/kds_image.py" "$HERE/kodak_deliver.py" "$LIB/"
 install -d "$LIB/sequences"
 install -m 644 "$HERE"/sequences/*.json "$LIB/sequences/"
 install -m 644 "$HERE/sane.d/dll.conf" "$HERE/sane.d/net.conf" "$LIB/sane.d/"
 install -m 644 "$HERE/README.md" "$LIB/"
-install -m 644 "$HERE/kodak-saned.service" "$HERE/kodak-scand.service" "$HERE/kodak-oled.service" "$HERE/kodak-native.service" "$HERE/kodak-sane.service" /etc/systemd/system/
+install -m 644 "$HERE/kodak-saned.service" "$HERE/kodak-scand.service" "$HERE/kodak-oled.service" "$HERE/kodak-native.service" "$HERE/kodak-sane.service" "$HERE/kodak-web.service" /etc/systemd/system/
 
 install -d -m 755 "$ETC"
 [ -f "$ETC/config.yaml" ] || { install -m 644 "$HERE/config.example.yaml" "$ETC/config.yaml"; log "created $ETC/config.yaml: set paperless.url"; }
@@ -61,6 +63,9 @@ chmod 600 "$ETC/paperless-token"
 systemctl daemon-reload
 systemctl enable kodak-oled.service
 systemctl restart kodak-oled.service
+# Settings page (kodak-web): password protected; the password is made on the first start.
+systemctl enable kodak-web.service
+systemctl restart kodak-web.service
 if [ "${DRIVER:-vendor}" = sane ]; then
   # Our SANE backend (backend/ in the repository) + a station that is a plain SANE client.
   log "Building and installing the kodak_i2x00 SANE backend"
@@ -89,4 +94,5 @@ else
   systemctl restart kodak-saned.service kodak-scand.service
   log "Done (vendor driver). Logs: journalctl -u kodak-scand -u kodak-saned -u kodak-oled -f"
 fi
+log "Settings page: http://$(hostname -I | cut -d" " -f1):2600/  user admin, password: sudo cat $ETC/web-password"
 [ -s "$ETC/paperless-token" ] || log "Paperless token not set yet: scans are kept in the spool until you add it (see README)"

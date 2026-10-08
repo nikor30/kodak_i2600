@@ -106,10 +106,13 @@ class Device:
             raise ValueError(f"LCD message {msg} is not allowed")
         self.set(LCD_POPULATE, (msg_id << 8) | msg_type, ((LCD_H // 8) << 8) | LCD_W, bitmap)
 
-    def set_function_numbers(self):
-        """SetSequenceNumber exactly as the vendor driver sends it on every open: show function 1,
-        highest selectable number 7 (docs/protocol/commands.md; other values are not classified)."""
-        self.set(SET_SEQUENCE_NUMBER, 1, 7)
+    def set_function_numbers(self, count=3):
+        """SetSequenceNumber: show function 1 and offer the numbers 1..count on the panel.
+        wIndex is taken to be a bit mask of the selectable numbers (hyp.): the vendor driver
+        sends 7 on every open and the panel then offers 1-3 (docs/protocol/commands.md)."""
+        if not 1 <= count <= 9:
+            raise ValueError("count must be 1..9")
+        self.set(SET_SEQUENCE_NUMBER, 1, (1 << count) - 1)
 
     def events(self, on):
         """Switch interrupt events on/off (as captured: wValue 1, wIndex 1 = on / 0 = off)."""

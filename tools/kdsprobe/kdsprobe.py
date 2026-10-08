@@ -66,10 +66,10 @@ def watch_loop(dev, args, t0, prev, next_status):
 
 def cmd_function(dev, args):
     before = k.parse_status(dev.get(k.GET_STATUS, 32))
-    dev.set_function_numbers()
+    dev.set_function_numbers(args.count)
     time.sleep(0.5)
     after = k.parse_status(dev.get(k.GET_STATUS, 32))
-    print(f"SetSequenceNumber 1/7 sent; function number in the status: {before['button']} -> {after['button']}, "
+    print(f"SetSequenceNumber 1/{(1 << args.count) - 1:#x} sent; function number in the status: {before['button']} -> {after['button']}, "
           f"error {before['error']} -> {after['error']}")
 
 
@@ -91,7 +91,8 @@ def main():
     sub.add_parser("info")
     w = sub.add_parser("watch")
     w.add_argument("--seconds", type=float, default=0)
-    sub.add_parser("function")
+    fn = sub.add_parser("function")
+    fn.add_argument("--count", type=int, default=3, help="offer function numbers 1..COUNT (default 3, the vendor's value)")
     l = sub.add_parser("lcd")
     l.add_argument("text")
     l.add_argument("--size", type=int, default=12)

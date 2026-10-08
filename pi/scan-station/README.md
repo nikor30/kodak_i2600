@@ -39,6 +39,44 @@ It needs `/etc/kodak-scan/firmware/powerup.seq` to survive a scanner power cycle
 installer converts an existing `powerup.json`); without it the vendor driver is run once instead.
 Back to the Python driver: `sudo DRIVER=native ./install.sh`.
 
+### Settings page (`kodak-web.service`, port 2600)
+`http://<address of the Pi>:2600/`, user `admin`, password in `/etc/kodak-scan/web-password` (made at the
+first start; change it by editing that file and `systemctl restart kodak-web`).
+- **Station**: what the station is doing, what is selected on the scanner, the last scans and whether they are uploaded.
+- **Paperless-ngx**: address and API token, with a connection test. The token is written to
+  `/etc/kodak-scan/paperless-token` (mode 600) and never sent back to the browser.
+- **Network share (SMB)** and **E-mail**: a share (`//server/share`, optional folder, user, password) and a mail
+  server (host, port, STARTTLS/SSL, user, password, sender, recipient), each with a test button. The passwords go
+  to `/etc/kodak-scan/smb-password` and `smtp-password` (mode 600) and are never sent back.
+- **Buttons**: which profile is on function numbers 1–7, whether a scan starts on Start or when paper is inserted,
+  whether the scanner's display shows page counts, date and time, and after how many idle minutes the station
+  leaves the scanner alone.
+- **Profiles**: name, text on the scanner's display, colour mode, both sides, blank sides, JPEG quality or
+  black/white threshold, where the PDF goes (Paperless, share or e-mail, with an own recipient if wanted),
+  document title / file name and tags.
+- **Statistics**: pages and scans today, in the last 7 and 30 days and in total, pages per day, per profile and
+  per destination (kept in `/var/lib/kodak-scan/stats.json`).
+
+Saving rewrites `/etc/kodak-scan/config.yaml` (comments are kept; the file from before the first change is
+`config.yaml.bak-web`). `kodak-sane` notices the change and restarts itself when idle (about 6 s); the other
+two stations need `systemctl restart`. Settings in the `web:` section of the config: `port` (2600), `bind`
+(`0.0.0.0`), `auth` (`true`). The page is plain HTTP with one password: for a home network, not the internet.
+
+### Destinations
+Every profile has a `destination`: `paperless` (default), `smb` or `email`. A finished job waits in the spool until
+its destination took it; a destination that is down does not hold up the others. Files on the share are named after
+the document title and never overwritten (a second file with the same title gets the job id added). E-mail sends
+the PDF as an attachment; a PDF over `email.max_mb` (20) is moved to `failed/` instead of being retried.
+The share is written with `smbclient`, so no mount is needed.
+
+### Display and standby
+With `native.display_info` the scanner's display shows, under the profile's text, `Today N  Total N` (pages) and
+the date and time; the selected function is refreshed every minute and all of them after a scan.
+After `native.standby_after` idle minutes (15; 0 = never) the station asks the backend to be quiet: nothing is sent
+to the scanner any more, the clock line is removed (it would stand still), and the scanner is free to enter its own
+power saving. Start, ▲/▼, new paper or the cover end the rest. The station cannot put the scanner to sleep itself:
+the scanner's power requests are not decoded.
+
 ### Native power-up (optional)
 After power-on the scanner has only a boot firmware; the host must load the rest. The native
 service can replay the vendor driver's own initialisation from a file you make locally once:

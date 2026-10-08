@@ -1,0 +1,30 @@
+[Unit]
+Description=Kodak i2600 scan station: settings page (http://<this host>:2600/)
+Documentation=file:///usr/local/lib/kodak-scan/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/kodak-scan/kodak_web.py --config /etc/kodak-scan/config.yaml
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+# Root, because it writes the root-owned config and token files; everything else is locked down.
+ProtectSystem=strict
+ReadWritePaths=/etc/kodak-scan
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+# AF_NETLINK: smbclient looks up the network interfaces for the share test.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

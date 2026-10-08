@@ -31,6 +31,8 @@
 /* Size of an A4 sheet in raw pixels, for sane_get_parameters() before a scan. */
 #define A4_W 2448
 #define A4_H 3464
+#define NUM_LABELS 7        /* function numbers the panel offers */
+#define LABEL_SIZE 160
 
 enum {
     OPT_NUM,
@@ -47,6 +49,9 @@ enum {
     OPT_FUNCTION,
     OPT_PAGE_LOADED,
     OPT_COVER_OPEN,
+    OPT_GROUP_DISPLAY,
+    OPT_LABEL_1,            /* ... OPT_LABEL_1 + NUM_LABELS - 1 */
+    OPT_QUIET = OPT_LABEL_1 + 7,
     NUM_OPTIONS
 };
 
@@ -73,6 +78,9 @@ struct handle {
     SANE_Option_Descriptor opt[NUM_OPTIONS];
     int mode, source, threshold, raw, deskew;
     int pressed;            /* Start press not yet reported through the scan option */
+    int quiet;
+    char label[NUM_LABELS][LABEL_SIZE];
+    char label_name[NUM_LABELS][12], label_title[NUM_LABELS][32];
 
     struct kds_seq seq;
     int batch;              /* a batch is running on the device */
@@ -97,6 +105,7 @@ static char cfg_sequence[512] = KDS_DATADIR "/color300-duplex.seq";
 static char cfg_spool_dir[256];
 static char cfg_powerup[512];
 static int cfg_memory_pages = -1;
+static int cfg_functions;               /* function numbers the panel offers, 0 = unchanged */
 static char cfg_label[10][64];          /* LCD text per function number, "" = leave alone */
 
 /* ---- configuration ----------------------------------------------------------- */
@@ -127,6 +136,8 @@ static void read_config_file(const char *path)
             snprintf(cfg_spool_dir, sizeof(cfg_spool_dir), "%.250s", val);
         } else if (sscanf(p, "memory-pages %d", &n) == 1) {
             cfg_memory_pages = n;
+        } else if (sscanf(p, "functions %d", &n) == 1 && n >= 1 && n <= 9) {
+            cfg_functions = n;
         } else if (sscanf(p, "label %d %63[^\n]", &n, val) == 2 && n >= 1 && n <= 9) {
             snprintf(cfg_label[n], sizeof(cfg_label[n]), "%.63s", val);
         } else {
@@ -233,6 +244,7 @@ static void init_options(struct handle *h)
         { OPT_GROUP_MODE, SANE_TITLE_STANDARD, 0 },
         { OPT_GROUP_ADVANCED, "Advanced", SANE_CAP_ADVANCED },
         { OPT_GROUP_SENSORS, SANE_TITLE_SENSORS, SANE_CAP_ADVANCED },
+        { OPT_GROUP_DISPLAY, "Display and power", SANE_CAP_ADVANCED },
     };
     for (size_t i = 0; i < sizeof(groups) / sizeof(groups[0]); i++) {
         o = &h->opt[groups[i].opt];
@@ -319,6 +331,27 @@ static void init_options(struct handle *h)
     o->desc = SANE_DESC_COVER_OPEN;
     o->type = SANE_TYPE_BOOL;
     o->cap = sensor;
+
+    for (int i = 0; i < NUM_LABELS; i++) {
+        snprintf(h->label_name[i], sizeof(h->label_name[i]), "label-%d", i + 1);
+        snprintf(h->label_title[i], sizeof(h->label_title[i]), "Display text for function %d", i + 1);
+        snprintf(h->label[i], LABEL_SIZE, "%s", cfg_label[i + 1]);
+        o = &h->opt[OPT_LABEL_1 + i];
+        o->name = h->label_name[i];
+        o->title = h->label_title[i];
+        o->desc = "Text on the scanner's display next to this function number (ASCII). A line break starts "
+                  "small info lines below the title. The scanner forgets it when switched off.";
+        o->type = SANE_TYPE_STRING;
+        o->size = LABEL_SIZE;
+        o->cap |= SANE_CAP_ADVANCED;
+    }
+    o = &h->opt[OPT_QUIET];
+    o->name = "quiet";
+    o->title = "Quiet while idle";
+    o->desc = "Send nothing to the scanner while it is idle, so that it may go to standby. "
+              "Buttons, paper and cover are still reported.";
+    o->type = SANE_TYPE_BOOL;
+    o->cap |= SANE_CAP_ADVANCED;
 
     h->mode = KDS_MODE_COLOR;
     h->source = 1;
@@ -417,7 +450,7 @@ EXPORT SANE_Status sane_kodak_i2x00_open(SANE_String_Const name, SANE_Handle *ha
     struct handle *h = calloc(1, sizeof(*h));
     if (!h)
         return SANE_STATUS_NO_MEM;
-    int rc = kds_open(dev->usb, cfg_powerup, &h->dev);
+    int rc = kds_open(dev->usb, cfg_powerup, cfg_functions, &h->dev);
     if (rc != KDS_OK) {
         kds_dbg(1, "open %s: %s", dev->name, kds_strerror(rc));
         free(h);
@@ -484,8 +517,14 @@ EXPORT SANE_Status sane_kodak_i2x00_control_option(SANE_Handle handle, SANE_Int 
         case OPT_RESOLUTION: *(SANE_Word *)value = 300; break;
         case OPT_THRESHOLD: *(SANE_Word *)value = h->threshold; break;
         case OPT_RAW: *(SANE_Word *)value = h->raw; break;
+        case OPT_QUIET: *(SANE_Word *)value = h->quiet; break;
         case OPT_SWDESKEW: *(SANE_Word *)value = h->deskew; break;
-        default:            /* sensors */
+        default:
+            if (n >= OPT_LABEL_1 && n < OPT_LABEL_1 + NUM_LABELS) {
+                strcpy(value, h->label[n - OPT_LABEL_1]);
+                break;
+            }
+            /* sensors */
             if (kds_panel(h->dev, &panel) != KDS_OK)
                 return SANE_STATUS_IO_ERROR;
             h->pressed |= panel.start_pressed;          /* kept until the scan option is read */
@@ -545,12 +584,30 @@ EXPORT SANE_Status sane_kodak_i2x00_control_option(SANE_Handle handle, SANE_Int 
     case OPT_SWDESKEW:
         h->deskew = *(SANE_Word *)value != 0;
         break;
+    case OPT_QUIET:
+        h->quiet = *(SANE_Word *)value != 0;
+        kds_set_quiet(h->dev, h->quiet);
+        break;
     case OPT_RAW:
         h->raw = *(SANE_Word *)value != 0;
         if (info)
             *info |= SANE_INFO_RELOAD_PARAMS;
         break;
     default:
+        if (n >= OPT_LABEL_1 && n < OPT_LABEL_1 + NUM_LABELS) {
+            uint8_t bitmap[KDS_LCD_BYTES];
+            const char *text = value;
+            if (strnlen(text, LABEL_SIZE) >= LABEL_SIZE)
+                return SANE_STATUS_INVAL;
+            kds_lcd_text(text, bitmap);
+            int rc = kds_lcd_label(h->dev, n - OPT_LABEL_1 + 1, bitmap);
+            if (rc != KDS_OK) {
+                kds_dbg(1, "LCD label %d: %s", n - OPT_LABEL_1 + 1, kds_strerror(rc));
+                return to_sane(rc);
+            }
+            strcpy(h->label[n - OPT_LABEL_1], text);
+            break;
+        }
         return SANE_STATUS_INVAL;
     }
     return SANE_STATUS_GOOD;
@@ -583,10 +640,18 @@ EXPORT SANE_Status sane_kodak_i2x00_start(SANE_Handle handle)
             kds_dbg(1, "scan sequence %s: %s", cfg_sequence, kds_strerror(rc));
             return to_sane(rc);
         }
-        rc = kds_batch_start(h->dev, &h->seq, h->source == 1);
-        if (rc != KDS_OK) {
-            kds_dbg(1, "start: %s", kds_strerror(rc));
-            return to_sane(rc);
+        for (int attempt = 0;; attempt++) {
+            rc = kds_batch_start(h->dev, &h->seq, h->source == 1);
+            if (rc != KDS_OK) {
+                kds_dbg(1, "start: %s", kds_strerror(rc));
+                return to_sane(rc);
+            }
+            /* Seen once after a long idle time: the start sequence is accepted, but the scanner
+             * neither feeds nor reports anything. Do not wait 30 s for that; stop and start again. */
+            if (attempt == 1 || kds_batch_wait_feed(h->dev, 6.0))
+                break;
+            kds_dbg(1, "the scanner did not react to the scan start: stopping and starting once more");
+            kds_batch_end(h->dev);
         }
         h->batch = 1;
         h->next_side = KDS_FRONT;

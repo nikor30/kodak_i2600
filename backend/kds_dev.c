@@ -34,6 +34,7 @@
 #define REQ_LCD_POPULATE 0x62
 
 #define EV_END_OF_OPERATION 0x01
+#define EV_POWER 0x10
 #define EV_TRAY 0x13
 #define EV_INTERLOCK 0x16
 #define EV_BUTTON 0x20
@@ -76,7 +77,7 @@ struct kds_dev {
     int ev_running, ev_stop, dead;
 
     /* panel, from events and GetStatus */
-    int start_pressed, function, tray, interlock;
+    int start_pressed, function, tray, interlock, power, quiet;
 
     /* batch */
     int active;             /* a batch exists (supervisor thread to join) */
@@ -84,6 +85,7 @@ struct kds_dev {
     int done;               /* readers have to stop */
     int finished;           /* supervisor is through */
     int cancel, ends, sheets, error, duplex;
+    int batch_events;       /* events since the start sequence was sent */
     double last_event, done_at, status_at;
     pthread_t sup_thread;
     struct reader rd[2];
@@ -230,7 +232,13 @@ static void handle_event(struct kds_dev *d, const uint8_t *ev)
     kds_dbg(4, "event %02x %02x %02x %02x %02x", ev[0], ev[1], ev[2], ev[3], ev[4]);
     pthread_mutex_lock(&d->lock);
     d->last_event = now();
+    d->batch_events++;
     switch (ev[0]) {
+    case EV_POWER:              /* 3 = idle, 4 = operating; anything else is news (standby?) */
+        if (ev[2] != d->power && ((ev[2] != 3 && ev[2] != 4) || (d->power != 3 && d->power != 4 && d->power != 0)))
+            kds_dbg(1, "power state %d -> %d", d->power, ev[2]);
+        d->power = ev[2];
+        break;
     case EV_BUTTON:
         d->start_pressed = 1;
         d->function = ev[2];
@@ -298,7 +306,7 @@ static void *event_thread(void *arg)
 }
 
 /* ---- open / close ------------------------------------------------------------ */
-int kds_open(struct libusb_device *usbdev, const char *powerup_path, struct kds_dev **out)
+int kds_open(struct libusb_device *usbdev, const char *powerup_path, int functions, struct kds_dev **out)
 {
     struct kds_dev *d = calloc(1, sizeof(*d));
     if (!d)
@@ -346,14 +354,17 @@ int kds_open(struct libusb_device *usbdev, const char *powerup_path, struct kds_
         rc = KDS_E_NO_FIRMWARE;
         goto fail;
     }
-    if (st.button == 0) {
-        /* After the power-up the panel has no function number: blank LCD, Start reports 0.
-         * SetSequenceNumber as the vendor driver sends it on every open: number 1 of 7. */
-        int urc = libusb_control_transfer(d->h, 0x40, REQ_SET_SEQUENCE_NUMBER, 1, 7, NULL, 0, CTRL_TIMEOUT_MS);
+    if (st.button == 0 || functions > 0) {
+        /* SetSequenceNumber (section 7): show number 1; wIndex is a bit mask of the numbers the
+         * arrow buttons offer. After the power-up the panel has none (blank LCD, Start reports
+         * 0); the vendor driver sends 7 (numbers 1-3) on every open. */
+        int count = functions >= 1 && functions <= 9 ? functions : 3;
+        int urc = libusb_control_transfer(d->h, 0x40, REQ_SET_SEQUENCE_NUMBER, 1, (uint16_t)((1 << count) - 1),
+                                          NULL, 0, CTRL_TIMEOUT_MS);
         rc = urc < 0 ? usb_err(urc) : get_status(d, &st);
         if (rc < 0)
             goto fail;
-        kds_dbg(2, "function number set on the panel (now %d)", st.button);
+        kds_dbg(2, "panel offers function numbers 1-%d (now %d)", count, st.button);
     }
     d->tray = st.tray;
     d->interlock = st.interlock;
@@ -410,7 +421,7 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
     /* No control requests while a batch runs (section 8). Otherwise GetStatus at most every
      * 2 s (the vendor's idle poll rate): frontends poll the sensors far more often, and
      * button, paper and cover changes arrive as events in between anyway. */
-    int idle = !d->active && !d->dead && now() - d->status_at >= 2.0;
+    int idle = !d->active && !d->dead && !d->quiet && now() - d->status_at >= 2.0;
     pthread_mutex_unlock(&d->lock);
     struct status st = { 0 };
     if (idle)
@@ -432,6 +443,14 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
         rc = KDS_E_IO;
     pthread_mutex_unlock(&d->lock);
     return rc;
+}
+
+void kds_set_quiet(struct kds_dev *d, int quiet)
+{
+    pthread_mutex_lock(&d->lock);
+    d->quiet = quiet;
+    d->status_at = 0;           /* a fresh status as soon as we may ask again */
+    pthread_mutex_unlock(&d->lock);
 }
 
 /* LCDPopulate (section 7): message type 1 = function label, id = function number.
@@ -953,6 +972,9 @@ int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex)
     pthread_mutex_unlock(&d->lock);
 
     rc = replay(d, seq);
+    pthread_mutex_lock(&d->lock);
+    d->batch_events = 0;        /* what comes now belongs to the feed (Transport State, Start of Operation) */
+    pthread_mutex_unlock(&d->lock);
     if (rc == KDS_OK) {
         for (int i = 0; i < 2; i++) {
             d->rd[i].dev = d;
@@ -988,6 +1010,28 @@ int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex)
         pthread_mutex_unlock(&d->lock);
     }
     return rc;
+}
+
+/* After kds_batch_start(): 1 as soon as the scanner shows that it feeds (an event, a page or
+ * the end of the batch), 0 if nothing came for `seconds`. A started scan reports Transport
+ * State and Start of Operation within about a second. */
+int kds_batch_wait_feed(struct kds_dev *d, double seconds)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    ts.tv_sec += (time_t)seconds;
+    ts.tv_nsec += (long)((seconds - (time_t)seconds) * 1e9);
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_sec++;
+        ts.tv_nsec -= 1000000000;
+    }
+    pthread_mutex_lock(&d->lock);
+    int rc = 0;
+    while (d->active && !d->batch_events && !d->done && !d->finished && !d->head[0] && !d->head[1] && rc == 0)
+        rc = pthread_cond_timedwait(&d->cond, &d->lock, &ts);
+    int fed = !d->active || d->batch_events || d->done || d->finished || d->head[0] || d->head[1];
+    pthread_mutex_unlock(&d->lock);
+    return fed;
 }
 
 int kds_batch_next(struct kds_dev *d, int side, struct kds_page **page)

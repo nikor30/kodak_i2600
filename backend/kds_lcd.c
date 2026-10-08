@@ -91,25 +91,56 @@ static void set_pixel(uint8_t *bitmap, int x, int y)
         bitmap[(y / 8) * KDS_LCD_W + x] |= (uint8_t)(1 << (y % 8));
 }
 
-/* Double size if the text fits in 3 lines of 10 characters, else single size (6 lines of 21). */
+static void draw(uint8_t *bitmap, const char *s, int left, int top, int scale)
+{
+    for (int i = 0; s[i]; i++) {
+        unsigned char ch = (unsigned char)s[i];
+        const uint8_t *g = font[ch >= 0x20 && ch <= 0x7e ? ch - 0x20 : '?' - 0x20];
+        for (int col = 0; col < 5; col++)
+            for (int row = 0; row < 8; row++)
+                if (g[col] >> row & 1)
+                    for (int sy = 0; sy < scale; sy++)
+                        for (int sx = 0; sx < scale; sx++)
+                            set_pixel(bitmap, left + (i * 6 + col) * scale + sx, top + row * scale + sy);
+    }
+}
+
+/* The text up to the first line break is the title: double size if it fits (lines of 10
+ * characters, 16 pixels high), else single size (lines of 21, 8 pixels high). Every further
+ * line is an info line in single size below it; they are kept even if the title must shrink.
+ * Without line breaks: up to 3 large or 6 small lines. */
 void kds_lcd_text(const char *text, uint8_t bitmap[KDS_LCD_BYTES])
 {
-    char lines[MAX_LINES][MAX_COLS + 1];
-    int scale = wrap(text, 10, lines) <= 3 ? 2 : 1;
-    int nlines = scale == 2 ? 3 : MAX_LINES;
-    if (scale == 1)
-        wrap(text, MAX_COLS, lines);
-    int left = scale == 2 ? 4 : 1;
+    char lines[MAX_LINES][MAX_COLS + 1], title[128];
+    const char *info = strchr(text, '\n');
+    size_t tlen = info ? (size_t)(info - text) : strlen(text);
+    if (tlen >= sizeof(title))
+        tlen = sizeof(title) - 1;
+    memcpy(title, text, tlen);
+    title[tlen] = 0;
+
+    int ninfo = 0;
+    for (const char *p = info; p && p[1] && ninfo < MAX_LINES - 1; p = strchr(p + 1, '\n'))
+        ninfo++;
+    int room = KDS_LCD_H - 8 * ninfo;           /* pixel rows left for the title */
     memset(bitmap, 0, KDS_LCD_BYTES);
+    int scale = wrap(title, 10, lines) * 16 <= room ? 2 : 1;
+    int nlines = wrap(title, scale == 2 ? 10 : MAX_COLS, lines);
+    if (nlines > room / (8 * scale))
+        nlines = room / (8 * scale);
     for (int l = 0; l < nlines; l++)
-        for (int i = 0; lines[l][i]; i++) {
-            unsigned char ch = (unsigned char)lines[l][i];
-            const uint8_t *g = font[ch >= 0x20 && ch <= 0x7e ? ch - 0x20 : '?' - 0x20];
-            for (int col = 0; col < 5; col++)
-                for (int row = 0; row < 8; row++)
-                    if (g[col] >> row & 1)
-                        for (int sy = 0; sy < scale; sy++)
-                            for (int sx = 0; sx < scale; sx++)
-                                set_pixel(bitmap, left + (i * 6 + col) * scale + sx, (l * 8 + row) * scale + sy);
-        }
+        draw(bitmap, lines[l], scale == 2 ? 4 : 1, l * 8 * scale, scale);
+
+    int top = KDS_LCD_H - 8 * ninfo;            /* info lines sit at the bottom */
+    for (const char *p = info; p && p[1] && top < KDS_LCD_H; top += 8) {
+        const char *end = strchr(p + 1, '\n');
+        size_t n = end ? (size_t)(end - p - 1) : strlen(p + 1);
+        char line[MAX_COLS + 1];
+        if (n > MAX_COLS)
+            n = MAX_COLS;
+        memcpy(line, p + 1, n);
+        line[n] = 0;
+        draw(bitmap, line, 1, top, 1);
+        p = end;
+    }
 }

@@ -52,7 +52,7 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 | `13` | AddEventToLog | – | X | writes the device log |
 | `14` | ClearEventLog | – | X | |
 | `15` | BatchPauseResume | – | ? | |
-| `16` | SetSequenceNumber | C: OUT v=0001 i=0007 len 0, on every open and after the power-up | W (v=1, i=7 only; owner's go-ahead 2026-10-08) | vendor name "button sequence number" (N); hyp.: the function number shown on the LCD (v) and its maximum (i) |
+| `16` | SetSequenceNumber | C: OUT v=0001 i=0007 len 0, on every open and after the power-up | W (v=1; i = 2^n − 1, n = 1…9) | **wValue = function number to show, wIndex = bit mask of the numbers ▲/▼ offer**: i=7 → 1–3, i=0x1f → 1–5 with wrap-around (P + owner at the panel, 2026-10-08). Volatile; sets the selection to wValue. Masks with gaps are untried |
 | `17` | StartCapture | C: OUT len 0, v=3 | ? | used for the short pre-scan capture only (section 8) |
 | `18` | SetAutoWhite | T: OUT len 4 | ? | |
 | `19` | SetOCPMode | – | ? | |
@@ -290,8 +290,10 @@ driver performs on every open.
 ### Function number
 - GetStatus `bButtonState` reads `01` while the LCD shows function 1 (hyp.: it is the function number).
 - SetSequenceNumber (`40 16`, wValue 1, wIndex 7 on every open): the vendor wrapper is called
-  "set button sequence number" and takes two u16 (N). Hyp.: wValue = number to show, wIndex = highest
-  selectable number.
+  "set button sequence number" and takes two u16 (N). wValue = number to show; **wIndex = bit mask of the
+  selectable numbers**, not the highest number: with 7 the arrows cycle 1–3, with `0x1f` 1–5 (wrapping
+  5 → 1 and 1 → 5), each number showing its type-1 label (P + owner, 2026-10-08). A number without an
+  uploaded label shows only the number (hyp., from the blank state after power-up).
 
 ## 8. Scanning (C: `station-scan-1`, color 300 dpi duplex, one A4 sheet)
 
@@ -387,6 +389,14 @@ no event at all for 30 s end the batch from the host side; in these cases, and w
 up, `10` v=0 OperationStop is sent before the lamp-off. (Not observed: whether `10` v=0 stops the
 feeder in the middle of a stack. The scanner feeds the whole stack on its own once started; a way
 to ask for a single sheet is not known.)
+
+**A start that does nothing** (P: seen once, 2026-10-08, first scan after 73 min without one; the
+vendor stack shows I/O errors after ~30 min idle, too): the start sequence is accepted, but the scanner
+sends no event and no data afterwards. A normal start reports Transport State `12 00 01` within 0.1 s
+of the second `10` v=1, `12 00 02` and Start of Operation about 1 s later, and image data from ~2.8 s.
+The backend therefore waits 6 s for any event; if none comes it sends the usual stop/lamp-off and
+replays the start once more. Cause unknown (hyp.: the scanner rests after a long idle time and the
+replayed pauses are too short for its wake-up).
 
 **Sequence file for the C backend**: the same steps as text, one per line:
 `out RR VVVV IIII HEXDATA|- PAUSE` or `in RR VVVV IIII LENGTH PAUSE` (request, wValue, wIndex in

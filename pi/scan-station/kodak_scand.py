@@ -30,6 +30,9 @@ import requests
 import sane
 import yaml
 
+import kodak_deliver as deliver
+from kodak_deliver import PermanentError
+
 log = logging.getLogger("kodak-scand")
 NO_DOCS = "Document feeder out of documents"
 # Exit status that asks systemd to restart kodak-saned (ExecStopPost in the unit): the
@@ -160,7 +163,9 @@ def finish_job(spool, job, profile, incomplete=False):
     with open(tmp, "wb") as f:
         f.write(img2pdf.convert([str(p) for p in pages]))
     meta = {"title": title, "created": created.isoformat(), "tags": profile.get("tags") or [],
-            "pages": len(pages)}
+            "pages": len(pages), "destination": str(profile.get("destination") or "paperless")}
+    if profile.get("email_to"):
+        meta["email_to"] = str(profile["email_to"])
     (spool.outbox / f"{job}.json").write_text(json.dumps(meta))
     tmp.rename(spool.outbox / f"{job}.pdf")   # the PDF appears last: the uploader keys on it
     shutil.rmtree(workdir)
@@ -237,10 +242,6 @@ def scanner_loop(cfg, spool, stop, wake_uploader, status):
 
 
 # ------------------------------------------------------------------- upload --
-class PermanentError(Exception):
-    pass
-
-
 class Paperless:
     def __init__(self, pcfg):
         self.url = (pcfg.get("url") or "").rstrip("/")
@@ -282,29 +283,46 @@ class Paperless:
         return r.text.strip().strip('"')   # consumption task id
 
 
-def uploader_loop(cfg, spool, stop, wake, status):
-    pl = Paperless(cfg["paperless"])
-    if not pl.configured():
-        log.error("Paperless url/token not configured: scans stay in %s", spool.outbox)
+def uploader_loop(cfg, spool, stop, wake, status, stats=None):
+    """Delivers what is in the outbox: each job to the destination named in its metadata."""
+    targets = {"paperless": Paperless(cfg["paperless"]), "smb": deliver.Smb(cfg.get("smb")),
+               "email": deliver.Email(cfg.get("email"))}
+    stats = stats or deliver.Stats(spool.root)
+    for name, t in targets.items():
+        if name == "paperless" and not t.configured():
+            log.error("Paperless url/token not configured: its scans stay in %s", spool.outbox)
     while not stop.is_set():
-        if pl.configured():
-            for pdf in sorted(spool.outbox.glob("*.pdf")):
-                meta_file = pdf.with_suffix(".json")
-                meta = json.loads(meta_file.read_text())
-                try:
-                    task = pl.upload(pdf, meta)
-                except PermanentError as e:
-                    log.error("upload of %s rejected, moved to failed/: %s", pdf.name, e)
-                    dest = spool.failed
-                except Exception as e:
-                    log.warning("upload of %s failed, retrying in %d s: %s",
-                                pdf.name, cfg["paperless"]["retry_interval"], e)
-                    break
-                else:
-                    log.info("uploaded %s (%d pages), Paperless task %s", pdf.name, meta["pages"], task)
-                    dest = spool.sent
-                shutil.move(str(pdf), dest / pdf.name)
-                shutil.move(str(meta_file), dest / meta_file.name)
+        blocked = set()         # destinations that failed in this round: try them again later
+        for pdf in sorted(spool.outbox.glob("*.pdf")):
+            meta_file = pdf.with_suffix(".json")
+            meta = json.loads(meta_file.read_text())
+            name = meta.get("destination") or "paperless"
+            target = targets.get(name)
+            if name in blocked:
+                continue
+            try:
+                if target is None:
+                    raise PermanentError(f"unknown destination {name!r}")
+                if not target.configured():
+                    raise RuntimeError(f"destination {name} is not set up")
+                result = target.upload(pdf, meta)
+            except PermanentError as e:
+                log.error("delivery of %s to %s rejected, moved to failed/: %s", pdf.name, name, e)
+                stats.delivered(name, 0, ok=False)
+                dest = spool.failed
+            except Exception as e:  # noqa: BLE001 (network, server down, wrong password: retry)
+                log.warning("delivery of %s to %s failed, retrying in %d s: %s",
+                            pdf.name, name, cfg["paperless"]["retry_interval"], e)
+                blocked.add(name)
+                continue
+            else:
+                what = {"paperless": "Paperless task", "smb": "file", "email": "sent to"}[name]
+                log.info("%s %s (%d pages), %s %s", "uploaded" if name != "email" else "mailed",
+                         pdf.name, meta["pages"], what, result)
+                stats.delivered(name, pdf.stat().st_size)
+                dest = spool.sent
+            shutil.move(str(pdf), dest / pdf.name)
+            shutil.move(str(meta_file), dest / meta_file.name)
         status.set()   # refresh the queue count
         cutoff = time.time() - cfg["keep_sent_days"] * 86400
         for f in spool.sent.iterdir():
