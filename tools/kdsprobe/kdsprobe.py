@@ -4,16 +4,18 @@
   kdsprobe.py info                  status, firmware versions, serial, meters
   kdsprobe.py watch [--seconds N]   print status changes and interrupt events
                                     (press buttons, load/remove paper, open the cover)
-  kdsprobe.py lcd TEXT [--size 11] [--dry-run]
+  kdsprobe.py lcd TEXT [--label N] [--size 12] [--dry-run]
                                     replace the LCD message "Rescan documents" (type 4, id 1; the
                                     vendor driver restores it on its next open)
 
 Stop kodak-scand/kodak-saned first: `watch` claims the USB interface.
 """
 import argparse
+import os
 import sys
 import time
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pi", "scan-station"))
 import kds_usb as k
 
 
@@ -61,29 +63,16 @@ def watch_loop(dev, args, t0, prev, next_status):
             prev = st
 
 
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
-
-def render_text(text, size):
-    """Text at the top-left of the 128x48 LCD area, like the vendor's own labels."""
-    from PIL import Image, ImageDraw, ImageFont
-    img = Image.new("1", (k.LCD_W, k.LCD_H), 0)
-    d = ImageDraw.Draw(img)
-    d.fontmode = "1"
-    d.multiline_text((1, 4), text.replace("\\n", "\n"), font=ImageFont.truetype(FONT, size), fill=1, spacing=1)
-    px = img.load()
-    return k.lcd_bitmap([[px[x, y] for x in range(k.LCD_W)] for y in range(k.LCD_H)])
-
-
 def cmd_lcd(dev, args):
-    bitmap = render_text(args.text, args.size)
+    bitmap = k.lcd_text(args.text, args.size)
     for row in k.lcd_rows(bitmap):
         if row.strip():
             print("|" + row + "|")
     if args.dry_run:
         return
-    dev.lcd_populate(bitmap)
-    print("sent as LCD message type 4, id 1")
+    msg = (k.LCD_TYPE_LABEL, args.label) if args.label else k.LCD_MSG_DISCONNECTED
+    dev.lcd_populate(bitmap, msg)
+    print(f"sent as LCD message type {msg[0]}, id {msg[1]}")
 
 
 def main():
@@ -94,7 +83,8 @@ def main():
     w.add_argument("--seconds", type=float, default=0)
     l = sub.add_parser("lcd")
     l.add_argument("text")
-    l.add_argument("--size", type=int, default=11)
+    l.add_argument("--size", type=int, default=12)
+    l.add_argument("--label", type=int, help="write the label of this function number (1..9) instead")
     l.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     try:

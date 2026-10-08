@@ -1,6 +1,6 @@
-# Raspberry Pi scan station
+# Raspberry Pi integration
 
-- [`phase1/`](phase1/README.md): Kodak's x86_64 driver on the Pi: the chroot, box64 (with our patch), qemu fallback, diagnostics.
-- [`scan-station/`](scan-station/README.md): `kodak-saned` + `kodak-scand`: auto-scan on paper → PDF → Paperless-ngx, with a spool and retry.
-
-Button/panel handling is still open (the vendor SANE backend doesn't expose it, Q-022).
+- `phase1/`: vendor x86_64 driver on the Pi (chroot + qemu-user / box64).
+- `scan-station/`: the scan station. Two alternatives that share config, spool, uploader and OLED:
+  `kodak-native` (native driver, Start button, LCD labels) and `kodak-scand` + `kodak-saned`
+  (vendor driver under box64, scan on paper). See `scan-station/README.md`.

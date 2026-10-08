@@ -16,6 +16,31 @@ feeder ─USB─ Kodak vendor driver (x86_64) under box64, in /opt/kodak-x86
 Everything above saned talks only SANE, so the vendor driver can later be
 replaced by the native backend without touching this service.
 
+## Two stations, one at a time
+| | `kodak-native.service` (native driver) | `kodak-scand` + `kodak-saned` (vendor driver under box64) |
+|---|---|---|
+| Trigger | **Start button**; ▲/▼ pick the profile, the scanner's LCD shows its label | paper in the feeder (2 s poll) |
+| Scan modes | always color 300 dpi duplex; gray, black/white, simplex and blank removal in software | whatever the vendor backend offers |
+| Idle cost | one small Python process, no emulation | saned under box64, polled every 2 s |
+| After a scanner power cycle | runs the vendor driver once (~15 s) to load the firmware, then native | – |
+| Status | new (2026-10-08), color/gray/bw at 300 dpi only | proven, but goes stale after idle time (F-038, F-054) |
+
+Switch: `sudo DRIVER=native ./install.sh` or `sudo ./install.sh` (vendor). Both use the same config,
+spool, uploader and OLED status. They never run together (`Conflicts=`).
+
+### Native station
+```
+Start button ─ interrupt event ─ kodak_native.py              kodak-native.service
+   kds_scan.py   replay sequences/color300-duplex.json, read both image pipes, cut into pages
+   kds_image.py  find sheet, deskew, crop, colour-correct, drop blank sides (worker processes)
+   → spool/work → img2pdf → spool/outbox → the same upload thread as kodak-scand
+```
+- `native.functions` in the config maps LCD function numbers to profiles; a profile's `label:` is the
+  text on the scanner's LCD (stored in the scanner, rewritten only when it changes).
+- `native.trigger: paper` scans as soon as paper is inserted instead of waiting for Start.
+- Start with an empty feeder or an unassigned number shows a short message on the OLED and does nothing.
+- Protocol and processing are described in `docs/protocol/commands.md` and `image-processing.md`.
+
 ## Install
 Prerequisites: `pi/phase1/setup-x86-chroot.sh` and `pi/phase1/setup-box64.sh`.
 

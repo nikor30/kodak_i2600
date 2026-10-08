@@ -153,7 +153,7 @@ def status_text(st):
         return st.get("error") or "Scanner error"
     if st.get("queued"):
         return f"Ready · {st['queued']} to upload"
-    return "Ready"
+    return st.get("label") or "Ready"   # kodak-native: selected function number and profile
 
 
 def font(bold, size):

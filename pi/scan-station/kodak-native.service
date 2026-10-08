@@ -1,0 +1,22 @@
+[Unit]
+Description=Kodak i2600 scan station on the native driver: Start button → Paperless-ngx
+Documentation=file:///usr/local/lib/kodak-scan/README.md
+# Uses the scanner exclusively; the vendor-driver station is the fallback (see README).
+Conflicts=kodak-scand.service kodak-saned.service
+After=network-online.target kodak-scand.service kodak-saned.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/kodak-scan/kodak_native.py --config /etc/kodak-scan/config.yaml
+Environment=PYTHONUNBUFFERED=1
+# Root: raw USB access, and the vendor driver (chroot + box64) must be run once after a scanner power cycle.
+StateDirectory=kodak-scan
+RuntimeDirectory=kodak-scan
+LoadCredential=paperless-token:/etc/kodak-scan/paperless-token
+Restart=always
+RestartSec=10
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

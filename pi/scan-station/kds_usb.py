@@ -24,6 +24,7 @@ READ_SAFE = {GET_STATUS, GET_FW_VERSIONS, METERS, EOL_CONFIGURATION, SERIAL_NUMB
 WRITE_SAFE = {LCD_POPULATE, INTERRUPT_EVENT_CONTROL}
 
 LCD_W, LCD_H = 128, 48          # LCDPopulate bitmap: 6 pages of 128 column bytes, bit 0 = top row
+LCD_TYPE_LABEL = 1              # message type of the function-number labels, id = number
 LCD_MSG_DISCONNECTED = (4, 1)   # (type, id) of the one message the vendor driver uploads on every open
 
 LIBUSB_ERROR_TIMEOUT = -7
@@ -94,12 +95,14 @@ class Device:
     def lcd_populate(self, bitmap, msg=LCD_MSG_DISCONNECTED):
         """Upload one LCD message bitmap (768 bytes, see lcd_bitmap()).
 
-        Only the message seen in captures is allowed; other (type, id) pairs
-        (e.g. the function labels, docs/protocol/commands.md section 7) are not classified yet.
+        msg = (type, id). Allowed: the message seen in captures (4, 1) and the function
+        labels (1, n) with n = 1..9 (docs/protocol/commands.md section 7).
         """
-        if len(bitmap) != LCD_W * LCD_H // 8 or msg != LCD_MSG_DISCONNECTED:
-            raise ValueError("only the captured message (type 4, id 1) with a 768-byte bitmap is allowed")
         msg_type, msg_id = msg
+        if len(bitmap) != LCD_W * LCD_H // 8:
+            raise ValueError("LCD bitmap must be 768 bytes")
+        if msg != LCD_MSG_DISCONNECTED and not (msg_type == LCD_TYPE_LABEL and 1 <= msg_id <= 9):
+            raise ValueError(f"LCD message {msg} is not allowed")
         self.set(LCD_POPULATE, (msg_id << 8) | msg_type, ((LCD_H // 8) << 8) | LCD_W, bitmap)
 
     def events(self, on):
@@ -162,3 +165,26 @@ EVENT_NAMES = {
     0x43: "Mini Cal Paused", 0x44: "Setup Pause", 0x50: "Patch Detected", 0x51: "Patch Pause",
     0x52: "DSP Reply", 0x60: "Screen Missing", 0xF0: "Debug", 0xF1: "Trace Log",
 }
+
+
+LCD_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+
+def lcd_text(text, size=12):
+    """Render text the way the vendor does (\"Sans 9\", top left, wrapped at 128 px) -> LCD bitmap."""
+    from PIL import Image, ImageDraw, ImageFont
+    font = ImageFont.truetype(LCD_FONT, size)
+    img = Image.new("1", (LCD_W, LCD_H), 0)
+    d = ImageDraw.Draw(img)
+    d.fontmode = "1"
+    lines, cur = [], ""
+    for word in text.split():
+        if cur and d.textlength(cur + " " + word, font=font) > LCD_W - 2:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = (cur + " " + word).strip()
+    lines.append(cur)
+    d.multiline_text((1, 3), "\n".join(lines[:3]), font=font, fill=1, spacing=1)
+    px = img.load()
+    return lcd_bitmap([[px[x, y] for x in range(LCD_W)] for y in range(LCD_H)])

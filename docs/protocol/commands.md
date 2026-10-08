@@ -90,7 +90,7 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 | `45` | BatchData | C: IN 3 = `02 00 00`; OUT `01 00 02` before a scan, `02 00 00` after | R | |
 | `50` | Printer | – | ? | imprinter, not fitted |
 | `5f` | OCPLEDControl | – | ? | |
-| `62` | LCDPopulate | C, P: OUT v=0104 i=0680 len 768 | W (type 4 id 1 only) | LCD message bitmap, section 7 |
+| `62` | LCDPopulate | C, P: OUT v=0104 i=0680 len 768 | W (type 4 id 1; type 1 ids 1–9) | LCD message bitmap, section 7 |
 | `64` | (unnamed) | – | ? | sent by the vendor's message loader after a language change (N); hyp.: text direction |
 | `63` | LCDContrast | – | ? | |
 | `a0` | AccessInternalMemory | T: OUT | X* | Cypress FX2 RAM load (`a0 e600` = CPUCS reset), power-up only |
@@ -232,6 +232,7 @@ The host renders text itself and uploads **bitmaps**; the scanner stores them as
 - Data: 6 pages of 128 bytes. Each byte is one 8-pixel column, **bit 0 = top row**; page 0 is the
   top. The message area is therefore **128 × 48 pixels**. (C: the payload of `open-A` renders as the
   text "Rescan documents" in an ~11 px font, rows 5–14, starting at column 1.)
+- The vendor renders with cairo/pango: a 128 × 48 surface, font "Sans 9", wrapped at 128 px, no antialiasing (N).
 - P: the scanner accepts a payload rendered by us for type 4, id 1 (2026-10-08, no stall, status unchanged).
   What the panel then shows is **not verified** (needs eyes on the LCD).
 
@@ -239,7 +240,7 @@ Message types (N: the vendor's message table and loader; meanings are hyp. until
 
 | Type | Ids | Use |
 |---|---|---|
-| 1 | button number | text label of a function number (set from the TWAIN `SetOcpButtons` task: button number + text). Not sent by the SANE path, so **never captured** |
+| 1 | button number | text label of a function number (set from the TWAIN `SetOcpButtons` task: button number + text). Not sent by the SANE path, so never captured. P (2026-10-08, owner's go-ahead): uploads for ids 1–3 with wValue `(n << 8) \| 1` are accepted by the scanner |
 | 2 | 0…3 | fixed, translated messages, loaded when the stored `lcd_messages_version`/language differs |
 | 3 | 1…3 | fixed, translated messages |
 | 4 | 1, 2, 3, 4, 5, 8, 9 | fixed, translated messages. **Id 1 is uploaded on every open** ("Rescan documents"; the vendor calls it the "disconnected while scanning" message) |

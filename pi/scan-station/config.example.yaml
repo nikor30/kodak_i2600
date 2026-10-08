@@ -43,3 +43,13 @@ fan:                                     # PoE HAT (B) fan: on/off thermostat (t
   enabled: true                          # false: leave the fan alone
   on_temp: 60                            # °C CPU: fan on at or above
   off_temp: 50                           # °C CPU: fan off at or below
+
+native:                                  # kodak-native.service (native driver; replaces kodak-scand + kodak-saned)
+  trigger: button                        # button = scan when Start is pressed | paper = scan when paper is inserted
+  functions:                             # function number on the scanner's LCD (▲/▼) → profile
+    1: color300
+    2: gray300
+    3: bw300
+  # A profile's optional `label:` is the text shown next to its number on the scanner's LCD
+  # (default: the profile name). The native driver always scans color 300 dpi duplex and
+  # derives mode (Color/Gray/Lineart), duplex (both/front) and blank-page removal from `sane:`.

@@ -18,6 +18,7 @@ import threading
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "usbcap"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pi", "scan-station"))
 import kds_usb as k
 from usbmon_decode import transfers
 

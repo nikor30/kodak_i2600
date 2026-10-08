@@ -21,6 +21,7 @@ import uuid
 
 import img2pdf
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pi", "scan-station"))
 import kds_image as ki
 
 
