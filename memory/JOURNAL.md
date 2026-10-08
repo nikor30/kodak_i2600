@@ -136,3 +136,4 @@
 - B/W profile via function 3 through kodak-sane (F-087). All three profiles have now run on the new station.
 - Power cycle under kodak-sane (F-088): backend power-up 9.9 s, ready after 23 s.
 - Owner confirmed display and scan after the power cycle under kodak-sane (F-088). Open device tests of the backend unchanged: deskew on a visibly skewed sheet, cancel inside a page (Q-031).
+- Release v0.3.0 on the owner's request: station on the C SANE backend.
