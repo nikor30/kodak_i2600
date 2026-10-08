@@ -52,7 +52,7 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 | `13` | AddEventToLog | – | X | writes the device log |
 | `14` | ClearEventLog | – | X | |
 | `15` | BatchPauseResume | – | ? | |
-| `16` | SetSequenceNumber | C: OUT v=0001 i=0007 len 0 | ? | vendor name "button sequence number" (N); hyp.: the function number shown on the LCD (v) and its maximum (i) |
+| `16` | SetSequenceNumber | C: OUT v=0001 i=0007 len 0, on every open and after the power-up | W (v=1, i=7 only; owner's go-ahead 2026-10-08) | vendor name "button sequence number" (N); hyp.: the function number shown on the LCD (v) and its maximum (i) |
 | `17` | StartCapture | C: OUT len 0, v=3 | ? | used for the short pre-scan capture only (section 8) |
 | `18` | SetAutoWhite | T: OUT len 4 | ? | |
 | `19` | SetOCPMode | – | ? | |
