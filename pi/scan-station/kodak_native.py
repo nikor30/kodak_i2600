@@ -45,7 +45,7 @@ NATIVE_DEFAULTS = {"trigger": "button", "functions": {1: None}, "sequence": "col
 # ---------------------------------------------------------------- processing --
 def render(job):
     """Pool worker: raw page (array or .npy path) -> (file extension, encoded bytes) or None if dropped."""
-    raw, mode, keep_blank, quality = job
+    raw, mode, keep_blank, quality, threshold = job
     if isinstance(raw, str):
         path = pathlib.Path(raw)
         raw = np.load(path)
@@ -55,7 +55,7 @@ def render(job):
         return None, info
     buf = io.BytesIO()
     if mode == "lineart":
-        im.convert("L").point(lambda v: 255 if v > 150 else 0).convert("1").save(
+        im.convert("L").point(lambda v: 255 if v > threshold else 0).convert("1").save(
             buf, "TIFF", compression="group4", dpi=(ki.DPI, ki.DPI))
         return (".tif", buf.getvalue()), info
     if mode == "gray":
@@ -70,7 +70,9 @@ def profile_settings(profile):
     mode = {"color": "color", "gray": "gray", "lineart": "lineart"}.get(str(opts.get("mode", "Color")).lower(), "color")
     duplex = str(opts.get("duplex", "both")).lower() in ("both", "duplex")
     keep_blank = str(opts.get("blankimagemode", "none")).lower() == "none"
-    return mode, duplex, keep_blank, int(profile.get("jpeg_quality", 85))
+    # bw_threshold: gray level (0-255, after colour correction) up to which a pixel prints black.
+    # 200 keeps light gray print that 150 loses; paper white is 255.
+    return mode, duplex, keep_blank, int(profile.get("jpeg_quality", 85)), int(profile.get("bw_threshold", 200))
 
 
 # ------------------------------------------------------------------- scanner --
@@ -169,7 +171,7 @@ class Station:
             time.sleep(2)
             return self.show_ready()
         profile = self.cfg["profiles"][name]
-        mode, duplex, keep_blank, quality = profile_settings(profile)
+        mode, duplex, keep_blank, quality, threshold = profile_settings(profile)
         job = self.spool.new_job()
         workdir = self.spool.work / job
         results, pending, lock = {}, [0], threading.Lock()
@@ -197,7 +199,7 @@ class Station:
 
             with lock:
                 results[(image_number, side)] = None
-            self.pool.apply_async(render, ((raw, mode, keep_blank, quality),), callback=finished, error_callback=failed)
+            self.pool.apply_async(render, ((raw, mode, keep_blank, quality, threshold),), callback=finished, error_callback=failed)
 
         self.status.set(state="scanning", pages=0, error=None)
         log.info("job %s: Start on function %d → profile %s", job, number, name)
