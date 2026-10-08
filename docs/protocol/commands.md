@@ -241,8 +241,9 @@ size as in T).
 - After `17` (calibration capture) both image pipes are read until a short block, data discarded.
 - Start condition: firmware id 1 (boot firmware). End condition: firmware id 3.
 
-**Status: not yet run against the device** (the file passes the allow-list check offline; the
-first real power cycle with it is still to come). Arguments of `18`, `a3`, `e0`, `f1`/`f2` in
+**Status: run once on the owner's unit (2026-10-08 15:06, F-075):** boot firmware to firmware
+id 3 in 10.1 s, LCD labels accepted right after, station `ready`. A scan after a native
+power-up and a second power-up with the same file are still to be shown. Arguments of `18`, `a3`, `e0`, `f1`/`f2` in
 this sequence are not decoded; they are sent exactly as captured.
 
 ## 7. Operator panel (LCD)
