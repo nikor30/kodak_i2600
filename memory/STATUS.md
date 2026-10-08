@@ -2,7 +2,8 @@
 
 _Last updated: 2026-10-08_
 
-**Current phase:** Phase 2 (protocol capture) + first native code, running on the Pi itself. The owner asked for the native ARM driver because the box64 station crashes often and is costly; the Phase 5 station (vendor driver under box64) stays in service meanwhile.
+**Current phase:** Phase 2/4 on the Pi itself. **The Pi now runs `kodak-native.service` (ADR-015, F-060)**: native driver, Start button, LCD labels; kodak-scand/kodak-saned (vendor driver under box64) are disabled but installed as the fallback (`sudo ./install.sh` in `pi/scan-station/` switches back, `DRIVER=native` switches forward).
+**To confirm with the owner:** does the LCD show the labels (Q-025); does Start scan and upload end to end; behaviour after scanner idle/sleep and after a power cycle (vendor fallback path is untested).
 **Known now:** commands are vendor control requests on EP0 (F-041), 69 request names (F-043), status block incl. paper/cover/function number (F-045, F-051), **button and panel events read natively** (F-051), scan start/stop sequence (F-052), **raw RGB image format** (F-053), LCD bitmap upload (F-046), SetTime (F-050), power-up firmware sequence (F-048).
 **First native scan done (F-056):** `tools/kdsprobe/native_scan.py` scans one sheet color 300 dpi duplex by replaying the captured start sequence; raw images only (no crop/deskew), and only on a scanner the vendor driver has initialised since power-up.
 **Image processing done (F-059):** `kds_pages.py` turns the raw streams into cropped, deskewed, colour-corrected pages and a PDF, and can queue it in the station's upload spool.
