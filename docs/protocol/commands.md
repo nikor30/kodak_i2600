@@ -1,6 +1,6 @@
 # Command layer
 
-Status: **request table, status block, events, panel read-out, scan start/stop and raw image format known; per-mode setup registers, page end and power-up init still open.**
+Status: **request table, status block, events, panel read-out, scan start/stop, raw image format, page trailers and the power-up replay known; per-mode setup registers still open.**
 Last updated 2026-10-08. Every statement names its source; "hyp." marks a hypothesis.
 
 Sources
@@ -336,3 +336,43 @@ the captured writes regardless still gave a good image.
 
 Requests this makes usable for scanning in color 300 dpi duplex (class `W`, exactly as captured):
 `3a`, `1b`, `32`, `31`, `11`, `45`, `37`, `30`, `10`, `17`, and the captured `a3`/`e0` register writes.
+
+### Driver procedure for a scan (P: the native station, jobs of 1–3 sheets in color, 2026-10-08)
+What a driver has to do around the replay; each point is what the working native station does.
+
+**Before the start** (GetStatus): `bInterlockState` = 1 (cover closed), `bTrayState` = 2 (paper),
+`bFwId` = 3 and `bErrorCode` = 0. Otherwise nothing is sent. The interface is claimed and events are
+enabled (`3a` 1/1) for as long as the device is open; events are read from EP `0x88` in 8-byte
+interrupt transfers.
+
+**Replay rules** for the captured start sequence (steps 1–4 above):
+- only the requests listed under "Native replay" may appear: OUT `3a`, `1b`, `32`, `31`, `11`, `45`,
+  `37`, `a3`, `e0`, `30`, `10`, `17`; IN `00`, `32`, `35`, `37`, `a3`, `e0`. A sequence with any other
+  request is refused as a whole;
+- the captured pause before a request is kept, capped at 1 s;
+- IN replies are not compared with the capture. Exception: the `37` VRam reply is kept and the
+  following `37` write sends **these** bytes back, not the captured ones;
+- directly after `17` StartCapture both image pipes are read with 16,384-byte requests until a
+  short block arrives (the pre-scan block, discarded).
+
+**While scanning**: one reader per image pipe, bulk reads of 256 KiB with a 500 ms timeout; no
+control requests. Pages are cut at the trailers (above): test for the 32 tag bytes at every line
+boundary (multiples of 7,740 bytes from the start of the page), then look for `00 k 01 ff` at
+`2k` bytes after the tags for k = 0…255. If no k fits, the tag bytes were pixel data and the page
+goes on. The next page starts directly after the trailer.
+
+**End**: the **second** End of Operation event (`01`; the first one ends the pre-scan) marks the
+end of the batch, its byte 4 is the number of sheets fed. The readers stop after two consecutive
+read timeouts following that event. Then `11` SetLamp 0 and `45` BatchData `02 00 00` are sent.
+More than 50 leftover lines without a trailer on a pipe mean the data ended inside a page.
+
+**Errors and abort**: events `30` Paper Jam, `31` Multifeed, `32` Buffer Overflow, `34` Other Error
+are recorded and the batch still ends with End of Operation. Interlock State = 2 (cover opened) or
+no event at all for 30 s end the batch from the host side; in these cases, and when the host gives
+up, `10` v=0 OperationStop is sent before the lamp-off. (Not observed: whether `10` v=0 stops the
+feeder in the middle of a stack. The scanner feeds the whole stack on its own once started; a way
+to ask for a single sheet is not known.)
+
+**Sequence file for the C backend**: the same steps as text, one per line:
+`out RR VVVV IIII HEXDATA|- PAUSE` or `in RR VVVV IIII LENGTH PAUSE` (request, wValue, wIndex in
+hex; length decimal; pause in seconds; `#` starts a comment).

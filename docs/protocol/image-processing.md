@@ -37,3 +37,15 @@ in its image library. Reference implementation: `tools/kdsprobe/kds_image.py` (n
 - Gray and black/white output, other resolutions, long or narrow sheets, sheets wider than the sensor.
 - Speed on the Pi 4: ~1.6 s for a blank side, ~3.3 s for a straight page, ~7 s for a page that needs rotating
   (three in parallel); 3 duplex sheets in 15 s. The rotation dominates.
+
+## Simplified processing in the C backend (`backend/`, 2026-10-08)
+The SANE backend does steps 2, 5 (crop only) and 6 and leaves the rest to the frontend:
+- **Crop without deskew**: a 4×4 cell is paper if the mean of max(R, G, B) is > 14. A cell row counts
+  if at least 10 % of its cells are paper, a cell column likewise; the page is the longest
+  unbroken run of counted columns by the longest unbroken run of counted rows (both cameras show
+  single bright cell columns near the sensor edges, e.g. at x ≈ 40, which a plain bounding box would
+  include). A skewed sheet keeps black wedges at its edges.
+- **Gray** = 0.299 R + 0.587 G + 0.114 B of the colour-corrected pixel (choice of the backend, not
+  compared with the vendor's gray output).
+- **Black/white**: gray < threshold is black; default threshold 200 (the value that kept light gray
+  print legible on the reference page).
