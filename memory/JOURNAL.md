@@ -118,3 +118,4 @@
 - Gray stack with forced spooling through the C backend (F-071); temp scans deleted.
 - Lineart + front-only stack through the C backend (F-072); temp scans deleted. Open on the device: B2 (Start-button sensor) and B3 (cancel inside a page, Q-031).
 - Deskew added to the C backend and verified offline (F-073); `docs/protocol/image-processing.md` now describes the backend's edge fit and crop. Next code steps: LCD labels, power-up replay in C; device tests open: deskew through scanimage, Start-button sensor, cancel inside a page.
+- LCD labels added to the C backend (F-074). Power-up replay in C deliberately postponed until the Python replay (untested, F-067) has passed a power cycle: porting it now would copy unverified logic.
