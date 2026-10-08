@@ -99,3 +99,7 @@
 - A 10-minute `kdsprobe.py watch` (scan services stopped) showed no event and no status change; the owner had been asked in chat to press buttons and load paper but did not answer, so most likely nobody was at the scanner. Q-024 stays open.
 - Scan services restarted afterwards; the vendor open re-uploads its own LCD message.
 - Journal on the Pi is volatile (only the current boot), so the owner's "crashes a lot" could not be traced in logs.
+- Later the same day, owner at the scanner: the station did not scan an inserted sheet (stale saned again, F-054); restart fixed it, and the scan was captured in full (`station-scan-1.pcap`): scan sequence F-052, raw RGB image format F-053 (both sides rendered from the wire).
+- `kdsprobe.py watch` now enables events (`3a`): owner pressed ▲, ▼, Start, opened the cover, inserted paper; every action came through as an event and/or status change (F-051). Q-016 and Q-024 closed.
+- Owner: LCD shows only the stock `1` (F-055).
+- Slip: a wait loop with `pgrep -f` matched its own shell and hung, and a `pkill -f` killed the calling shell; the services were down a few minutes longer than planned. Use the task notification, not pgrep loops.

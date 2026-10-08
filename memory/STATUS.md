@@ -3,8 +3,8 @@
 _Last updated: 2026-10-08_
 
 **Current phase:** Phase 2 (protocol capture) + first native code, running on the Pi itself. The owner asked for the native ARM driver because the box64 station crashes often and is costly; the Phase 5 station (vendor driver under box64) stays in service meanwhile.
-**Known now:** commands are vendor control requests on EP0 (F-041), 69 request names (F-043), the status block (F-045), LCD bitmap upload (F-046), SetTime (F-050), the power-up firmware sequence (F-048). `tools/kdsprobe/` talks to the scanner natively (read-only + one LCD message).
-**Not known yet:** the scan sequence and image format (Q-026), which status byte is paper/cover/function number (Q-024), what the LCD shows for our upload (Q-025), power-up init for a native driver (Q-027).
+**Known now:** commands are vendor control requests on EP0 (F-041), 69 request names (F-043), status block incl. paper/cover/function number (F-045, F-051), **button and panel events read natively** (F-051), scan start/stop sequence (F-052), **raw RGB image format** (F-053), LCD bitmap upload (F-046), SetTime (F-050), power-up firmware sequence (F-048).
+**Not known yet:** the mode-dependent setup registers and config fields (Q-026), page ends / stream length (Q-028), LCD function labels (Q-025), power-up init for a native driver (Q-027).
 
 ## Done
 - Phase 0: research, plan, memory, driver inventory (F-010…F-016), real USB descriptors (F-017…F-019).
@@ -15,12 +15,12 @@ _Last updated: 2026-10-08_
 - OLED status display on the PoE HAT (B): `kodak-oled.service` + status file from kodak-scand (ADR-011, F-037). Idle screensaver (starfield + bouncing IP). Fan thermostat in the same service (F-040; HAT fan switch must be in the programmable position). Installed 2026-10-01; not yet confirmed visually.
 
 ## Next actions (native driver)
-N1. **Owner at the scanner, ~5 min** (Q-024): `systemctl stop kodak-scand kodak-saned`, then `python3 tools/kdsprobe/kdsprobe.py watch`; press ▲, ▼, Start, open/close the cover, insert/remove a sheet, a few seconds apart. Restart the services afterwards.
-N2. **Scan capture** (Q-026): with the services running, start `python3 tools/usbcap/usbmon_capture.py -o captures/local/scan-<what>.pcap`, let the owner feed 1–2 sheets of non-private paper, stop with Ctrl-C. Repeat with `scanimage` under box64 for gray 200 dpi simplex (smallest case) and color 300 dpi duplex. Then decode ScannerConfiguration / OperationStartStop / StartCapture / interrupt events / image stream into `docs/protocol/`.
-N3. LCD check (Q-025): owner's go-ahead for uploading function labels (message type 1), then look at the panel.
-N4. Power-up capture (Q-027): start a capture, owner power-cycles the scanner, restart kodak-saned; decide how firmware images are obtained locally.
-N5. Then: native scan in `tools/kdsprobe/` (gray simplex first), and the C SANE backend in `backend/` from `docs/protocol/` (needs `libsane-dev`, `libusb-1.0-0-dev`).
-N6. Interim idea to cut cost and the F-038 failures before the native scan path exists: poll paper natively with GetStatus and start the box64 saned only for a scan (needs N1; changes ADR-010, so ask the owner first).
+N1. Capture tool: add the usbmon drop counter (Q-028). Then captures with the owner feeding paper: 2 sheets color 300 duplex (page boundaries), gray 200 simplex via `scanimage` under box64 (smallest mode), 600 dpi.
+N2. Native scan attempt in `tools/kdsprobe/`: replay the captured setup for color 300 duplex (register writes + ScannerConfiguration + OperationStart) and read both pipes into PNGs. All requests involved must first be classed `W` in `commands.md`; ask the owner before the first run (it moves paper).
+N3. Native panel daemon (quick win for the owner's wish): events → Start button + function number → trigger the existing station profile; replaces the 2 s box64 poll. Needs a design decision with the owner (changes ADR-010; the vendor driver claims the interface while it is open).
+N4. LCD function labels (Q-025): owner's go-ahead needed (persistent write, format only known from vendor code).
+N5. Power-up capture (Q-027): start a capture, owner power-cycles the scanner, restart kodak-saned.
+N6. C SANE backend in `backend/` from `docs/protocol/` once N2 works (needs `libsane-dev`, `libusb-1.0-0-dev`).
 
 ## Next actions (station, from before)
 0. Owner: check the PoE HAT OLED (IP on top, `Ready` below; `rotate: 180` in the `oled:` config if upside down) and feed a stack to see `Scanning page N` (ADR-011, F-037).
