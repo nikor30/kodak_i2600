@@ -28,6 +28,7 @@
 #define REQ_VRAM 0x37
 #define REQ_EVENT_CONTROL 0x3a
 #define REQ_BATCH_DATA 0x45
+#define REQ_LCD_POPULATE 0x62
 
 #define EV_END_OF_OPERATION 0x01
 #define EV_TRAY 0x13
@@ -44,7 +45,8 @@
 #define EVENT_SILENCE_S 30.0
 #define CTRL_TIMEOUT_MS 2000
 
-/* The only requests this driver sends (section 8, "Replay rules"). */
+/* The only requests this driver sends (section 8, "Replay rules"), besides LCDPopulate
+ * for function labels in kds_lcd_label(). */
 static const uint8_t OUT_ALLOWED[] = { 0x3a, 0x1b, 0x32, 0x31, 0x11, 0x45, 0x37, 0xa3, 0xe0, 0x30, 0x10, 0x17 };
 static const uint8_t IN_ALLOWED[] = { 0x00, 0x32, 0x35, 0x37, 0xa3, 0xe0 };
 
@@ -392,6 +394,27 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
         rc = KDS_E_IO;
     pthread_mutex_unlock(&d->lock);
     return rc;
+}
+
+/* LCDPopulate (section 7): message type 1 = function label, id = function number.
+ * The only use of request 62 in this driver; it is not allowed in a scan sequence. */
+int kds_lcd_label(struct kds_dev *d, int number, const uint8_t bitmap[KDS_LCD_BYTES])
+{
+    if (number < 1 || number > 9)
+        return KDS_E_SEQUENCE;
+    pthread_mutex_lock(&d->lock);
+    int idle = !d->active && !d->dead;
+    pthread_mutex_unlock(&d->lock);
+    if (!idle)
+        return KDS_E_BUSY;
+    int rc = libusb_control_transfer(d->h, 0x40, REQ_LCD_POPULATE, (uint16_t)(number << 8 | 1),
+                                     (KDS_LCD_H / 8) << 8 | KDS_LCD_W, (unsigned char *)bitmap,
+                                     KDS_LCD_BYTES, CTRL_TIMEOUT_MS);
+    if (rc < 0) {
+        kds_dbg(1, "LCD label %d: %s", number, libusb_error_name(rc));
+        return usb_err(rc);
+    }
+    return KDS_OK;
 }
 
 /* ---- sequence file ------------------------------------------------------------ */

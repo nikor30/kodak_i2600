@@ -96,6 +96,7 @@ static int num_ids = 1;
 static char cfg_sequence[512] = KDS_DATADIR "/color300-duplex.seq";
 static char cfg_spool_dir[256];
 static int cfg_memory_pages = -1;
+static char cfg_label[10][64];          /* LCD text per function number, "" = leave alone */
 
 /* ---- configuration ----------------------------------------------------------- */
 static void read_config_file(const char *path)
@@ -123,6 +124,8 @@ static void read_config_file(const char *path)
             snprintf(cfg_spool_dir, sizeof(cfg_spool_dir), "%.250s", val);
         } else if (sscanf(p, "memory-pages %d", &n) == 1) {
             cfg_memory_pages = n;
+        } else if (sscanf(p, "label %d %63[^\n]", &n, val) == 2 && n >= 1 && n <= 9) {
+            snprintf(cfg_label[n], sizeof(cfg_label[n]), "%.63s", val);
         } else {
             kds_dbg(1, "%s: unknown line: %s", path, p);
         }
@@ -418,6 +421,14 @@ EXPORT SANE_Status sane_kodak_i2x00_open(SANE_String_Const name, SANE_Handle *ha
         return to_sane(rc);
     }
     kds_set_spool(h->dev, cfg_memory_pages, cfg_spool_dir);
+    for (int n = 1; n <= 9; n++) {      /* the scanner forgets its labels at power-off */
+        uint8_t bitmap[KDS_LCD_BYTES];
+        if (!cfg_label[n][0])
+            continue;
+        kds_lcd_text(cfg_label[n], bitmap);
+        rc = kds_lcd_label(h->dev, n, bitmap);
+        kds_dbg(rc == KDS_OK ? 2 : 1, "LCD label %d \"%s\": %s", n, cfg_label[n], kds_strerror(rc));
+    }
     init_options(h);
     *handle = h;
     return SANE_STATUS_GOOD;

@@ -6,14 +6,17 @@ only. No vendor code, no emulation.
 **State (2026-10-08): first version.** Built and tested offline against saved image streams;
 on the scanner, detection, open, options, the empty-feeder case and **color duplex scans of one sheet and of a 3-sheet stack**
 are tested, in Color, Gray and Lineart, duplex and front-only, and with all pages spooled to
-disk. Deskew is tested offline only (drawn sheets and a saved scan). Cancelling inside a page
-and the Start-button sensor are not tested.
+disk. Deskew is tested offline only (drawn sheets and a saved scan). Label uploads are accepted
+by the scanner, but nobody has looked at the display yet. Cancelling inside a page and the
+Start-button sensor are not tested.
 
 ## What it does
 - Finds the scanner, opens it, reads the panel: `--scan` (Start button pressed),
   `--function-number`, `--page-loaded`, `--cover-open`.
 - Scans color 300 dpi duplex by replaying the captured start sequence and delivers
   `Color`, `Gray` or `Lineart` (`--threshold`), `ADF Front` or `ADF Duplex`.
+- Writes a text label per function number to the scanner's display (`label N text` in
+  `kodak_i2x00.conf`, sent at every open; ASCII only).
 - Each page is deskewed, cropped to the sheet and colour-corrected (`--swdeskew=no` keeps the
   angle, `--raw` delivers the untouched sensor image).
 
@@ -23,7 +26,6 @@ and the Start-button sensor are not tested.
 - No power-up initialisation: after the scanner was switched off and on, `sane_open` fails
   with an I/O error until something else has loaded the firmware (the `kodak-native` service
   does that).
-- No LCD labels.
 - The i2400 and i2800 are untested (add their USB ids in `kodak_i2x00.conf` to try).
 
 ## Build, test, install
@@ -62,12 +64,14 @@ for one sheet (as far as is known). The backend therefore works in batches:
 | `kodak_i2x00.c` | SANE API: devices, options, frames |
 | `kds_dev.c` | USB requests (with the allow-list), events, sequence replay, batch threads, page spool |
 | `kds_split.c` | cuts an image stream into pages at the trailers |
-| `kds_image.c` | sheet detection, colour correction, gray, black/white |
+| `kds_image.c` | sheet detection, deskew, colour correction, gray, black/white |
+| `kds_lcd.c` | text to the 128 × 48 display bitmap (built-in 5×7 font) |
 | `tools/json2seq.py` | converts `pi/scan-station/sequences/*.json` to the backend's text format |
 | `tests/test_offline.c` | tests without hardware |
 
 Safety: `kds_dev.c` refuses every request that is not in the scan list of
-`docs/protocol/commands.md` section 8, both in its own calls and in a sequence file.
+`docs/protocol/commands.md` section 8, both in its own calls and in a sequence file. The one
+other request it sends is LCDPopulate for function labels 1–9 (section 7).
 
 Debug output: `SANE_DEBUG_KODAK_I2X00=1…4`.
 

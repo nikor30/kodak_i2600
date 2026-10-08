@@ -18,7 +18,7 @@ SEQ_JSON = ../pi/scan-station/sequences/color300-duplex.json
 
 B = build
 LIB = $(B)/libsane-kodak_i2x00.so.1
-OBJS = $(B)/kodak_i2x00.o $(B)/kds_dev.o $(B)/kds_split.o $(B)/kds_image.o
+OBJS = $(B)/kodak_i2x00.o $(B)/kds_dev.o $(B)/kds_split.o $(B)/kds_image.o $(B)/kds_lcd.o
 
 all: $(LIB) $(B)/color300-duplex.seq
 
@@ -31,7 +31,7 @@ $(LIB): $(OBJS)
 $(B)/color300-duplex.seq: $(SEQ_JSON) tools/json2seq.py | $(B)
 	python3 tools/json2seq.py $(SEQ_JSON) $@
 
-$(B)/test_offline: tests/test_offline.c $(B)/kds_dev.o $(B)/kds_split.o $(B)/kds_image.o
+$(B)/test_offline: tests/test_offline.c $(B)/kds_dev.o $(B)/kds_split.o $(B)/kds_image.o $(B)/kds_lcd.o
 	$(CC) $(CFLAGS) -I. -o $@ $^ $(LDLIBS)
 
 check: $(B)/test_offline $(B)/color300-duplex.seq

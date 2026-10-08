@@ -73,6 +73,12 @@ int kds_bytes_per_line(int mode, int w);
 /* w raw pixels -> one output line (kds_bytes_per_line() bytes) */
 void kds_convert_line(const uint8_t *raw, int w, int mode, int threshold, uint8_t *out);
 
+/* ---- LCD (kds_lcd.c) ---------------------------------------------------------- */
+#define KDS_LCD_W 128
+#define KDS_LCD_H 48
+#define KDS_LCD_BYTES (KDS_LCD_W * KDS_LCD_H / 8)
+void kds_lcd_text(const char *text, uint8_t bitmap[KDS_LCD_BYTES]);
+
 /* ---- scan start sequence (kds_dev.c) ---------------------------------------- */
 struct kds_step {
     uint8_t out, req;
@@ -110,6 +116,8 @@ int kds_open(struct libusb_device *usbdev, struct kds_dev **out);
 void kds_close(struct kds_dev *d);
 void kds_set_spool(struct kds_dev *d, int max_pages_in_memory, const char *dir);
 int kds_panel(struct kds_dev *d, struct kds_panel *p);
+/* Text shown on the LCD next to function number 1..9; lost when the scanner is switched off. */
+int kds_lcd_label(struct kds_dev *d, int number, const uint8_t bitmap[KDS_LCD_BYTES]);
 
 /* A batch is everything in the feeder: the scanner feeds the whole stack by itself. */
 int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex);

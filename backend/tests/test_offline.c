@@ -156,6 +156,46 @@ static void test_image(void)
     CHECK(!memcmp(out, px, 12), "raw");
 }
 
+static int lcd_pixel(const uint8_t *bm, int x, int y)
+{
+    return bm[(y / 8) * KDS_LCD_W + x] >> (y % 8) & 1;
+}
+
+static int lcd_rows_used(const uint8_t *bm, int y0, int y1)
+{
+    for (int y = y0; y < y1; y++)
+        for (int x = 0; x < KDS_LCD_W; x++)
+            if (lcd_pixel(bm, x, y))
+                return 1;
+    return 0;
+}
+
+static void test_lcd(int show)
+{
+    uint8_t bm[KDS_LCD_BYTES];
+    kds_lcd_text("L", bm);              /* double size, glyph at x = 4: a 10 x 14 "L" */
+    CHECK(lcd_pixel(bm, 4, 0) && lcd_pixel(bm, 5, 13) && lcd_pixel(bm, 13, 12) && lcd_pixel(bm, 13, 13)
+          && !lcd_pixel(bm, 13, 0) && !lcd_pixel(bm, 6, 11) && !lcd_pixel(bm, 4, 14) && !lcd_pixel(bm, 3, 0), "glyph L");
+    int n = 0;
+    for (int i = 0; i < KDS_LCD_BYTES; i++)
+        n += __builtin_popcount(bm[i]);
+    CHECK(n == 4 * (7 + 4), "L has %d pixels", n);
+    kds_lcd_text("Paperless Color", bm);    /* two large lines: rows 0..15 and 16..31 */
+    CHECK(lcd_rows_used(bm, 0, 16) && lcd_rows_used(bm, 16, 32) && !lcd_rows_used(bm, 32, 48), "two large lines expected");
+    if (show)
+        for (int y = 0; y < 34; y++) {
+            for (int x = 0; x < KDS_LCD_W; x++)
+                putchar(lcd_pixel(bm, x, y) ? '#' : '.');
+            putchar('\n');
+        }
+    kds_lcd_text("a text that is far too long for three large lines of ten", bm);
+    CHECK(lcd_rows_used(bm, 0, 8) && lcd_rows_used(bm, 16, 24) && !lcd_rows_used(bm, 24, 48), "three small lines expected");
+    kds_lcd_text("", bm);
+    CHECK(!lcd_rows_used(bm, 0, 48), "empty text");
+    kds_lcd_text("\xc3\xa4", bm);       /* non-ASCII becomes '?' and must not crash */
+    CHECK(lcd_rows_used(bm, 0, 16), "non-ASCII");
+}
+
 static void write_file(const char *path, const char *text)
 {
     FILE *f = fopen(path, "w");
@@ -233,6 +273,7 @@ int main(int argc, char **argv)
 {
     test_splitter();
     test_image();
+    test_lcd(getenv("KDS_TEST_SHOW_LCD") != NULL);
     if (argc > 1)
         test_sequence(argv[1]);
     for (int i = 2; i < argc; i++)
