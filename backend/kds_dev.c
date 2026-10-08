@@ -568,6 +568,7 @@ static void park(struct kds_dev *d, struct kds_page *p)
     free(p->data);
     p->data = NULL;
     p->fd = fd;
+    kds_dbg(3, "image %d parked in %s", p->number, d->spool_dir);
 }
 
 static void on_page(void *arg, int number, uint8_t *data, int lines)
