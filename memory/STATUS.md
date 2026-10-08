@@ -22,7 +22,8 @@ _Last updated: 2026-10-08_
 B1. (1 sheet and 3 sheets color duplex done, F-069, F-070.) Gray, spooling, Lineart and `ADF Front` done (F-071, F-072). All scan modes of the backend have now run on the device. Procedure: `systemctl stop kodak-native`, owner loads paper without pressing Start, `cd backend && make testenv && LD_LIBRARY_PATH=$PWD/build SANE_CONFIG_DIR=$PWD/build/conf SANE_DEBUG_KODAK_I2X00=3 scanimage -d $(scanimage -f %d) --format=png --batch=/tmp/p%d.png`, expect 2 files and `batch finished: 1 sheets`; then 3 sheets, then Gray/Lineart/`ADF Front`, then `systemctl start kodak-native`.
 B2. Start-button sensor with the owner at the panel (`scanimage -A` after a press shows `--scan … [yes]`), cover/paper sensors.
 B3. Spool test: `memory-pages 0` and a stack; cancel inside a page (Q-031: does OperationStop stop the feeder?).
-B4. Then: power-up replay in C (section 6), LCD labels, deskew, `make install`, and a SANE-client station to replace kodak-native.
+B3b. **Deskew is in (F-073), offline-verified; needs one stack through scanimage on the device** (expect `skew x.xx deg` in the debug log and pages of about 2442 × 3458).
+B4. Then: power-up replay in C (section 6), LCD labels, `make install`, and a SANE-client station to replace kodak-native.
 
 ## Next actions (native driver)
 N1. (multi-sheet done, F-057) Other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
