@@ -129,3 +129,11 @@
 - C power-up on the device with the owner (F-081): works, labels in the C font confirmed on the LCD. Follow-up scan blocked by `feeder empty` with a sheet loaded; to be checked.
 - Scan through the C backend after its own power-up (F-082). The `feeder empty` reading before it was correct: no sheet was in. Lesson: when the scanner says empty, ask the owner to look before suspecting the sensor.
 - Release v0.2.0 on the owner's request: branch pushed, tag on the branch head (PR #7 into `main` still to be merged by the owner).
+- Owner: use our own native driver for the station. Wrote `kodak_sane.py` + `kodak-sane.service` (ADR-018), `DRIVER=sane` in install.sh, GetStatus rate limit in the backend's sensor reads; installed and switched over at 15:43 (F-083). Test job with the owner is next.
+- First job through kodak-sane (F-084): 6.1 s from Start to the uploaded PDF. (The switch-over was at 15:39, not 15:43 as F-083 says.)
+- Stack through kodak-sane (F-085): 3 sheets in 9.0 s, blank backs dropped.
+- Gray profile via function 2 through kodak-sane (F-086).
+- B/W profile via function 3 through kodak-sane (F-087). All three profiles have now run on the new station.
+- Power cycle under kodak-sane (F-088): backend power-up 9.9 s, ready after 23 s.
+- Owner confirmed display and scan after the power cycle under kodak-sane (F-088). Open device tests of the backend unchanged: deskew on a visibly skewed sheet, cancel inside a page (Q-031).
+- Release v0.3.0 on the owner's request: station on the C SANE backend.

@@ -1,0 +1,26 @@
+[Unit]
+Description=Kodak i2600 scan station on our SANE backend kodak_i2x00: Start button → Paperless-ngx
+Documentation=file:///usr/local/lib/kodak-scan/README.md
+# Uses the scanner exclusively; kodak-native (Python driver) and the vendor-driver station are the fallbacks.
+Conflicts=kodak-native.service kodak-scand.service kodak-saned.service
+After=network-online.target kodak-native.service kodak-scand.service kodak-saned.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/kodak-scan/kodak_sane.py --config /etc/kodak-scan/config.yaml
+Environment=PYTHONUNBUFFERED=1
+# The backend's own messages (errors, power-up) go to the journal.
+Environment=SANE_DEBUG_KODAK_I2X00=1
+# Root: raw USB access, the local power-up file, and the vendor driver as the last resort after a power cycle.
+StateDirectory=kodak-scan
+RuntimeDirectory=kodak-scan
+LoadCredential=paperless-token:/etc/kodak-scan/paperless-token
+Restart=always
+# SIGTERM goes to the main process only, so a running job can finish its pages.
+KillMode=mixed
+TimeoutStopSec=45
+RestartSec=10
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

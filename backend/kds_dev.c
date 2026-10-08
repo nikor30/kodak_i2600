@@ -84,7 +84,7 @@ struct kds_dev {
     int done;               /* readers have to stop */
     int finished;           /* supervisor is through */
     int cancel, ends, sheets, error, duplex;
-    double last_event, done_at;
+    double last_event, done_at, status_at;
     pthread_t sup_thread;
     struct reader rd[2];
     struct kds_page *head[2], *tail[2];
@@ -407,13 +407,17 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
 {
     int rc = KDS_OK;
     pthread_mutex_lock(&d->lock);
-    int idle = !d->active && !d->dead;
+    /* No control requests while a batch runs (section 8). Otherwise GetStatus at most every
+     * 2 s (the vendor's idle poll rate): frontends poll the sensors far more often, and
+     * button, paper and cover changes arrive as events in between anyway. */
+    int idle = !d->active && !d->dead && now() - d->status_at >= 2.0;
     pthread_mutex_unlock(&d->lock);
     struct status st = { 0 };
-    if (idle)               /* no control requests while a batch runs (section 8) */
+    if (idle)
         rc = get_status(d, &st);
     pthread_mutex_lock(&d->lock);
     if (idle && rc == KDS_OK) {
+        d->status_at = now();
         d->tray = st.tray;
         d->interlock = st.interlock;
         if (st.button)

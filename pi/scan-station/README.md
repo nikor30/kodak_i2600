@@ -28,6 +28,17 @@ replaced by the native backend without touching this service.
 Switch: `sudo DRIVER=native ./install.sh` or `sudo ./install.sh` (vendor). Both use the same config,
 spool, uploader and OLED status. They never run together (`Conflicts=`).
 
+### Station on our SANE backend (`kodak-sane.service`)
+`sudo DRIVER=sane ./install.sh` builds and installs the C backend `kodak_i2x00` (`backend/`) and runs
+`kodak_sane.py`, which is a plain SANE client: Start button, function number, paper and cover come
+from the backend's sensor options, labels and the power-up file are handed to the backend through a
+generated SANE config (`/run/kodak-scan/sane.d`), and the station adds blank-side removal,
+black/white, PDF, spool and upload. It uses the same config file and the `native:` section
+(`trigger`, `functions`) as kodak-native. Logs: `journalctl -u kodak-sane -f`.
+It needs `/etc/kodak-scan/firmware/powerup.seq` to survive a scanner power cycle on its own (the
+installer converts an existing `powerup.json`); without it the vendor driver is run once instead.
+Back to the Python driver: `sudo DRIVER=native ./install.sh`.
+
 ### Native power-up (optional)
 After power-on the scanner has only a boot firmware; the host must load the rest. The native
 service can replay the vendor driver's own initialisation from a file you make locally once:
