@@ -129,6 +129,7 @@ void kds_set_quiet(struct kds_dev *d, int quiet);
 
 /* A batch is everything in the feeder: the scanner feeds the whole stack by itself. */
 int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex);
+int kds_batch_wait_feed(struct kds_dev *d, double seconds);                /* 1 = feeding, 0 = silence */
 int kds_batch_next(struct kds_dev *d, int side, struct kds_page **page);   /* KDS_OK, KDS_END or error */
 void kds_batch_end(struct kds_dev *d);
 int kds_batch_sheets(struct kds_dev *d);

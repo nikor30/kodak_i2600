@@ -390,6 +390,14 @@ up, `10` v=0 OperationStop is sent before the lamp-off. (Not observed: whether `
 feeder in the middle of a stack. The scanner feeds the whole stack on its own once started; a way
 to ask for a single sheet is not known.)
 
+**A start that does nothing** (P: seen once, 2026-10-08, first scan after 73 min without one; the
+vendor stack shows I/O errors after ~30 min idle, too): the start sequence is accepted, but the scanner
+sends no event and no data afterwards. A normal start reports Transport State `12 00 01` within 0.1 s
+of the second `10` v=1, `12 00 02` and Start of Operation about 1 s later, and image data from ~2.8 s.
+The backend therefore waits 6 s for any event; if none comes it sends the usual stop/lamp-off and
+replays the start once more. Cause unknown (hyp.: the scanner rests after a long idle time and the
+replayed pauses are too short for its wake-up).
+
 **Sequence file for the C backend**: the same steps as text, one per line:
 `out RR VVVV IIII HEXDATA|- PAUSE` or `in RR VVVV IIII LENGTH PAUSE` (request, wValue, wIndex in
 hex; length decimal; pause in seconds; `#` starts a comment).

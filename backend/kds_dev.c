@@ -85,6 +85,7 @@ struct kds_dev {
     int done;               /* readers have to stop */
     int finished;           /* supervisor is through */
     int cancel, ends, sheets, error, duplex;
+    int batch_events;       /* events since the start sequence was sent */
     double last_event, done_at, status_at;
     pthread_t sup_thread;
     struct reader rd[2];
@@ -231,6 +232,7 @@ static void handle_event(struct kds_dev *d, const uint8_t *ev)
     kds_dbg(4, "event %02x %02x %02x %02x %02x", ev[0], ev[1], ev[2], ev[3], ev[4]);
     pthread_mutex_lock(&d->lock);
     d->last_event = now();
+    d->batch_events++;
     switch (ev[0]) {
     case EV_POWER:              /* 3 = idle, 4 = operating; anything else is news (standby?) */
         if (ev[2] != d->power && ((ev[2] != 3 && ev[2] != 4) || (d->power != 3 && d->power != 4 && d->power != 0)))
@@ -970,6 +972,9 @@ int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex)
     pthread_mutex_unlock(&d->lock);
 
     rc = replay(d, seq);
+    pthread_mutex_lock(&d->lock);
+    d->batch_events = 0;        /* what comes now belongs to the feed (Transport State, Start of Operation) */
+    pthread_mutex_unlock(&d->lock);
     if (rc == KDS_OK) {
         for (int i = 0; i < 2; i++) {
             d->rd[i].dev = d;
@@ -1005,6 +1010,28 @@ int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex)
         pthread_mutex_unlock(&d->lock);
     }
     return rc;
+}
+
+/* After kds_batch_start(): 1 as soon as the scanner shows that it feeds (an event, a page or
+ * the end of the batch), 0 if nothing came for `seconds`. A started scan reports Transport
+ * State and Start of Operation within about a second. */
+int kds_batch_wait_feed(struct kds_dev *d, double seconds)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    ts.tv_sec += (time_t)seconds;
+    ts.tv_nsec += (long)((seconds - (time_t)seconds) * 1e9);
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_sec++;
+        ts.tv_nsec -= 1000000000;
+    }
+    pthread_mutex_lock(&d->lock);
+    int rc = 0;
+    while (d->active && !d->batch_events && !d->done && !d->finished && !d->head[0] && !d->head[1] && rc == 0)
+        rc = pthread_cond_timedwait(&d->cond, &d->lock, &ts);
+    int fed = !d->active || d->batch_events || d->done || d->finished || d->head[0] || d->head[1];
+    pthread_mutex_unlock(&d->lock);
+    return fed;
 }
 
 int kds_batch_next(struct kds_dev *d, int side, struct kds_page **page)

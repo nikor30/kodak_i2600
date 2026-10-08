@@ -640,10 +640,18 @@ EXPORT SANE_Status sane_kodak_i2x00_start(SANE_Handle handle)
             kds_dbg(1, "scan sequence %s: %s", cfg_sequence, kds_strerror(rc));
             return to_sane(rc);
         }
-        rc = kds_batch_start(h->dev, &h->seq, h->source == 1);
-        if (rc != KDS_OK) {
-            kds_dbg(1, "start: %s", kds_strerror(rc));
-            return to_sane(rc);
+        for (int attempt = 0;; attempt++) {
+            rc = kds_batch_start(h->dev, &h->seq, h->source == 1);
+            if (rc != KDS_OK) {
+                kds_dbg(1, "start: %s", kds_strerror(rc));
+                return to_sane(rc);
+            }
+            /* Seen once after a long idle time: the start sequence is accepted, but the scanner
+             * neither feeds nor reports anything. Do not wait 30 s for that; stop and start again. */
+            if (attempt == 1 || kds_batch_wait_feed(h->dev, 6.0))
+                break;
+            kds_dbg(1, "the scanner did not react to the scan start: stopping and starting once more");
+            kds_batch_end(h->dev);
         }
         h->batch = 1;
         h->next_side = KDS_FRONT;
