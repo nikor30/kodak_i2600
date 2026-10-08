@@ -80,17 +80,21 @@ void kds_convert_line(const uint8_t *raw, int w, int mode, int threshold, uint8_
 void kds_lcd_text(const char *text, uint8_t bitmap[KDS_LCD_BYTES]);
 
 /* ---- scan start sequence (kds_dev.c) ---------------------------------------- */
+enum { KDS_STEP_IN, KDS_STEP_OUT, KDS_STEP_OUTBLOB, KDS_STEP_BULK, KDS_STEP_WAIT };
 struct kds_step {
-    uint8_t out, req;
+    uint8_t kind, out, req; /* out = 1 for KDS_STEP_OUT */
+    uint8_t want;           /* WAIT: firmware id to wait for */
     uint16_t val, idx, len;
     uint8_t *data;          /* OUT payload */
+    uint32_t off, blob_len; /* OUTBLOB, BULK: payload position in the power-up .bin file */
     double gap;             /* pause before the request, seconds */
 };
 struct kds_seq {
     struct kds_step *steps;
     int n;
 };
-int kds_seq_load(const char *path, struct kds_seq *seq);
+int kds_seq_load(const char *path, struct kds_seq *seq);          /* scan start sequence */
+int kds_powerup_load(const char *path, struct kds_seq *seq);      /* power-up sequence */
 void kds_seq_free(struct kds_seq *seq);
 
 /* ---- device (kds_dev.c) ------------------------------------------------------ */
@@ -112,7 +116,8 @@ struct kds_panel {
 struct libusb_device;
 struct kds_dev;
 
-int kds_open(struct libusb_device *usbdev, struct kds_dev **out);
+/* powerup_path: PATH.seq of a local power-up file (with PATH.bin beside it), or NULL */
+int kds_open(struct libusb_device *usbdev, const char *powerup_path, struct kds_dev **out);
 void kds_close(struct kds_dev *d);
 void kds_set_spool(struct kds_dev *d, int max_pages_in_memory, const char *dir);
 int kds_panel(struct kds_dev *d, struct kds_panel *p);

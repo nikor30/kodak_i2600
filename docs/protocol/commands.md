@@ -240,6 +240,15 @@ size as in T).
   device does not answer while a freshly loaded firmware starts).
 - After `17` (calibration capture) both image pipes are read until a short block, data discarded.
 - Start condition: firmware id 1 (boot firmware). End condition: firmware id 3.
+- Timing used by the working replay: the captured pause before a step is kept, capped at 2 s;
+  control and bulk-OUT timeouts 5 s; a GetStatus wait polls every 0.1 s for at most 15 s (errors
+  while the new firmware starts are ignored); the reads after `17` use 16,384-byte requests with a
+  3 s timeout until a short block. A short bulk-OUT write is an error. The device keeps its USB
+  address; the same handle is used throughout.
+- **Text format for the C backend** (`powerup.seq`, beside the unchanged `powerup.bin`; made by
+  `backend/tools/powerup2seq.py`), one step per line: `out`/`in` as in the scan sequence file
+  (section 8), `outblob RR VVVV IIII OFFSET LENGTH PAUSE` (payload from the `.bin`),
+  `bulk OFFSET LENGTH PAUSE` (EP `0x02`), `wait ID PAUSE` (GetStatus until the firmware id is ID).
 - **After the replay the panel has no function number**: the LCD is blank, GetStatus `bButtonState`
   is 0 and a Start press arrives as `20 01 00` (scanning works all the same). The vendor driver sends
   `16` SetSequenceNumber v=1 i=7 half a second after the replayed window; sending exactly that sets

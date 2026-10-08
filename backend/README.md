@@ -17,15 +17,17 @@ Start-button sensor are not tested.
   `Color`, `Gray` or `Lineart` (`--threshold`), `ADF Front` or `ADF Duplex`.
 - Writes a text label per function number to the scanner's display (`label N text` in
   `kodak_i2x00.conf`, sent at every open; ASCII only).
+- After a scanner power cycle, loads the firmware itself at the first open if a local power-up
+  file is configured (`powerup` in `kodak_i2x00.conf`; see the comment there for how to make
+  it). Without that file `sane_open` fails with an I/O error until something else has
+  initialised the scanner. **Not yet run on the device from C** (the same replay works in the
+  Python station).
 - Each page is deskewed, cropped to the sheet and colour-corrected (`--swdeskew=no` keeps the
   angle, `--raw` delivers the untouched sensor image).
 
 ## What it does not do yet
 - No blank-page removal, no rotation by 180° for sheets fed bottom first, no resolution other
   than 300 dpi, no geometry options.
-- No power-up initialisation: after the scanner was switched off and on, `sane_open` fails
-  with an I/O error until something else has loaded the firmware (the `kodak-native` service
-  does that).
 - The i2400 and i2800 are untested (add their USB ids in `kodak_i2x00.conf` to try).
 
 ## Build, test, install
@@ -67,11 +69,14 @@ for one sheet (as far as is known). The backend therefore works in batches:
 | `kds_image.c` | sheet detection, deskew, colour correction, gray, black/white |
 | `kds_lcd.c` | text to the 128 × 48 display bitmap (built-in 5×7 font) |
 | `tools/json2seq.py` | converts `pi/scan-station/sequences/*.json` to the backend's text format |
+| `tools/powerup2seq.py` | converts a local `powerup.json` to the backend's power-up format |
 | `tests/test_offline.c` | tests without hardware |
 
 Safety: `kds_dev.c` refuses every request that is not in the scan list of
-`docs/protocol/commands.md` section 8, both in its own calls and in a sequence file. The one
-other request it sends is LCDPopulate for function labels 1–9 (section 7).
+`docs/protocol/commands.md` section 8, both in its own calls and in a sequence file. Outside
+that list it sends only: LCDPopulate for function labels 1–9 (section 7), SetSequenceNumber 1/7
+when the panel has no function number, and the power-up replay with its own request list
+(section 6), which contains no write to permanent storage.
 
 Debug output: `SANE_DEBUG_KODAK_I2X00=1…4`.
 

@@ -236,6 +236,44 @@ static void test_sequence(const char *path)
         write_file(tmp, bad[i]);
         CHECK(kds_seq_load(tmp, &seq) == KDS_E_SEQUENCE, "accepted: %s", bad[i]);
     }
+    /* power-up files: more kinds of steps, their own request lists */
+    static const char *pwr_bad[] = {
+        "out 35 0000 0000 00 0\n",              /* NVRam write */
+        "out 62 0104 0680 00 0\n",              /* LCDPopulate */
+        "out 23 0000 0000 - 0\n",               /* SubsystemFwUpdate */
+        "out 24 0000 0000 - 0\n",               /* BulkDownload */
+        "outblob a2 0000 0000 0 16 0\n",        /* EEPROM */
+        "out f1 0001 0000 - 0\n",               /* a diagnostic request other than v=3 */
+        "out 16 0001 0007 - 0\n",               /* not part of the replay */
+        "in 09 0000 0000 32 0\n",
+        "bulk 0 0 0\n",
+        "wait 300 0\n",
+    };
+    for (size_t i = 0; i < sizeof(pwr_bad) / sizeof(pwr_bad[0]); i++) {
+        write_file(tmp, pwr_bad[i]);
+        CHECK(kds_powerup_load(tmp, &seq) == KDS_E_SEQUENCE, "power-up file accepted: %s", pwr_bad[i]);
+    }
+    write_file(tmp, "wait 1 0\nout 21 0000 0000 - 0\noutblob a0 0000 0000 0 2048 0.1\nbulk 16384 16384 0\n"
+                    "out f1 0003 0000 - 0\nin f2 0000 0000 512 0\nwait 3 0.05\nout 1f 3077 7e46 - 0\n");
+    CHECK(kds_powerup_load(tmp, &seq) == KDS_OK && seq.n == 8 && seq.steps[0].kind == KDS_STEP_WAIT && seq.steps[0].want == 1
+          && seq.steps[2].kind == KDS_STEP_OUTBLOB && seq.steps[2].blob_len == 2048 && seq.steps[2].gap == 0.1
+          && seq.steps[3].kind == KDS_STEP_BULK && seq.steps[3].off == 16384 && seq.steps[6].want == 3, "good power-up file");
+    kds_seq_free(&seq);
+    write_file(tmp, "bulk 0 16 0\n");            /* power-up steps are not valid in a scan sequence */
+    CHECK(kds_seq_load(tmp, &seq) == KDS_E_SEQUENCE, "bulk accepted in a scan sequence");
+    write_file(tmp, "out 21 0000 0000 - 0\n");
+    CHECK(kds_seq_load(tmp, &seq) == KDS_E_SEQUENCE, "FirmwareDownload accepted in a scan sequence");
+    const char *real = getenv("KDS_TEST_POWERUP");  /* a real local power-up file, if there is one */
+    if (real) {
+        int rc = kds_powerup_load(real, &seq), kinds[5] = { 0 };
+        for (int i = 0; rc == KDS_OK && i < seq.n; i++)
+            kinds[seq.steps[i].kind]++;
+        printf("%s: %s, %d steps: %d in, %d out, %d outblob, %d bulk, %d wait\n", real, kds_strerror(rc), seq.n,
+               kinds[KDS_STEP_IN], kinds[KDS_STEP_OUT], kinds[KDS_STEP_OUTBLOB], kinds[KDS_STEP_BULK], kinds[KDS_STEP_WAIT]);
+        CHECK(rc == KDS_OK, "real power-up file refused");
+        kds_seq_free(&seq);
+    }
+
     write_file(tmp, "out 3a 0001 0001 - 0\n  # comment\nin 00 0000 0000 32 0.25\nout 45 0000 0000 010002 0\n");
     CHECK(kds_seq_load(tmp, &seq) == KDS_OK && seq.n == 3 && seq.steps[2].len == 3 && seq.steps[2].data[2] == 2
           && seq.steps[1].gap == 0.25 && seq.steps[1].len == 32, "good file");

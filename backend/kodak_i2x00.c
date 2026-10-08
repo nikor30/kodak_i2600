@@ -95,6 +95,7 @@ static struct usb_id ids[16] = { { 0x040a, 0x601d } };
 static int num_ids = 1;
 static char cfg_sequence[512] = KDS_DATADIR "/color300-duplex.seq";
 static char cfg_spool_dir[256];
+static char cfg_powerup[512];
 static int cfg_memory_pages = -1;
 static char cfg_label[10][64];          /* LCD text per function number, "" = leave alone */
 
@@ -120,6 +121,8 @@ static void read_config_file(const char *path)
                 ids[num_ids++] = (struct usb_id){ vid, pid };
         } else if (sscanf(p, "sequence %511s", val) == 1) {
             snprintf(cfg_sequence, sizeof(cfg_sequence), "%s", val);
+        } else if (sscanf(p, "powerup %511s", val) == 1) {
+            snprintf(cfg_powerup, sizeof(cfg_powerup), "%s", val);
         } else if (sscanf(p, "spool-dir %250s", val) == 1) {
             snprintf(cfg_spool_dir, sizeof(cfg_spool_dir), "%.250s", val);
         } else if (sscanf(p, "memory-pages %d", &n) == 1) {
@@ -414,7 +417,7 @@ EXPORT SANE_Status sane_kodak_i2x00_open(SANE_String_Const name, SANE_Handle *ha
     struct handle *h = calloc(1, sizeof(*h));
     if (!h)
         return SANE_STATUS_NO_MEM;
-    int rc = kds_open(dev->usb, &h->dev);
+    int rc = kds_open(dev->usb, cfg_powerup, &h->dev);
     if (rc != KDS_OK) {
         kds_dbg(1, "open %s: %s", dev->name, kds_strerror(rc));
         free(h);

@@ -20,10 +20,13 @@
 #define EP_EVENTS 0x88
 #define EP_IMAGE_FRONT 0x82
 #define EP_IMAGE_REAR 0x86
+#define EP_BULK_OUT 0x02
 
 #define REQ_GET_STATUS 0x00
 #define REQ_OPERATION 0x10
 #define REQ_SET_LAMP 0x11
+#define REQ_SET_SEQUENCE_NUMBER 0x16
+#define REQ_SET_TIME 0x1f
 #define REQ_START_CAPTURE 0x17
 #define REQ_VRAM 0x37
 #define REQ_EVENT_CONTROL 0x3a
@@ -44,11 +47,18 @@
 #define READ_TIMEOUT_MS 500
 #define EVENT_SILENCE_S 30.0
 #define CTRL_TIMEOUT_MS 2000
+#define PWR_TIMEOUT_MS 5000
+#define KODAK_EPOCH 978307200L       /* 2001-01-01 00:00:00 UTC, for SetTime */
 
 /* The only requests this driver sends (section 8, "Replay rules"), besides LCDPopulate
  * for function labels in kds_lcd_label(). */
 static const uint8_t OUT_ALLOWED[] = { 0x3a, 0x1b, 0x32, 0x31, 0x11, 0x45, 0x37, 0xa3, 0xe0, 0x30, 0x10, 0x17 };
 static const uint8_t IN_ALLOWED[] = { 0x00, 0x32, 0x35, 0x37, 0xa3, 0xe0 };
+/* Requests of the power-up replay (section 6). All of it is volatile: firmware and FPGA
+ * image go into RAM. Writes to permanent storage (NVRam 35, EEPROM a2, firmware update
+ * 23/24) are in neither list, so a power-up file containing one is refused. */
+static const uint8_t PWR_OUT_ALLOWED[] = { 0x21, 0xa0, 0x20, 0xf1, 0xa3, 0x37, 0x1f, 0x18, 0x11, 0xe0, 0x30, 0x17 };
+static const uint8_t PWR_IN_ALLOWED[] = { 0x00, 0xf2, 0xa3, 0x02, 0x34, 0x36, 0x37, 0x03, 0x35, 0xe3, 0xe2, 0xe0, 0x32, 0x33 };
 
 struct reader {
     struct kds_dev *dev;
@@ -132,6 +142,9 @@ static void pause_s(double s)
     struct timespec ts = { (time_t)s, (long)((s - (time_t)s) * 1e9) };
     nanosleep(&ts, NULL);
 }
+
+static int bulk_read(struct kds_dev *d, uint8_t ep, uint8_t *buf, int size, int timeout_ms, int *got);
+static int power_up(struct kds_dev *d, const char *seq_path);
 
 static int allowed(const uint8_t *list, size_t n, uint8_t req)
 {
@@ -285,7 +298,7 @@ static void *event_thread(void *arg)
 }
 
 /* ---- open / close ------------------------------------------------------------ */
-int kds_open(struct libusb_device *usbdev, struct kds_dev **out)
+int kds_open(struct libusb_device *usbdev, const char *powerup_path, struct kds_dev **out)
 {
     struct kds_dev *d = calloc(1, sizeof(*d));
     if (!d)
@@ -317,9 +330,30 @@ int kds_open(struct libusb_device *usbdev, struct kds_dev **out)
         goto fail;
     kds_dbg(2, "status: firmware id %d, tray %d, interlock %d, function %d, error %d",
             st.fw_id, st.tray, st.interlock, st.button, st.error);
-    if (st.fw_id != 3) {    /* 1 = boot firmware after power-up (section 6) */
+    if (st.fw_id == 1 && powerup_path && *powerup_path) {   /* boot firmware after power-on */
+        double t0 = now();
+        kds_dbg(1, "scanner was power-cycled: loading its firmware from %s", powerup_path);
+        rc = power_up(d, powerup_path);
+        if (rc == KDS_OK)
+            rc = get_status(d, &st);
+        if (rc < 0) {
+            kds_dbg(1, "power-up failed: %s", kds_strerror(rc));
+            goto fail;
+        }
+        kds_dbg(1, "power-up done in %.1f s, firmware id %d", now() - t0, st.fw_id);
+    }
+    if (st.fw_id != 3) {
         rc = KDS_E_NO_FIRMWARE;
         goto fail;
+    }
+    if (st.button == 0) {
+        /* After the power-up the panel has no function number: blank LCD, Start reports 0.
+         * SetSequenceNumber as the vendor driver sends it on every open: number 1 of 7. */
+        int urc = libusb_control_transfer(d->h, 0x40, REQ_SET_SEQUENCE_NUMBER, 1, 7, NULL, 0, CTRL_TIMEOUT_MS);
+        rc = urc < 0 ? usb_err(urc) : get_status(d, &st);
+        if (rc < 0)
+            goto fail;
+        kds_dbg(2, "function number set on the panel (now %d)", st.button);
     }
     d->tray = st.tray;
     d->interlock = st.interlock;
@@ -417,7 +451,7 @@ int kds_lcd_label(struct kds_dev *d, int number, const uint8_t bitmap[KDS_LCD_BY
     return KDS_OK;
 }
 
-/* ---- sequence file ------------------------------------------------------------ */
+/* ---- sequence files ---------------------------------------------------------- */
 void kds_seq_free(struct kds_seq *seq)
 {
     for (int i = 0; i < seq->n; i++)
@@ -432,9 +466,37 @@ static int hexval(int c)
     return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
 }
 
-/* Lines: `out RR VVVV IIII HEXDATA|- PAUSE` or `in RR VVVV IIII LENGTH PAUSE` */
-int kds_seq_load(const char *path, struct kds_seq *seq)
+static int parse_hex(const char *arg, struct kds_step *st)
 {
+    size_t n = strcmp(arg, "-") ? strlen(arg) : 0;
+    if (n % 2 || n / 2 > 0xffff)
+        return KDS_E_SEQUENCE;
+    st->len = (uint16_t)(n / 2);
+    st->data = malloc(st->len ? st->len : 1);
+    if (!st->data)
+        return KDS_E_NOMEM;
+    for (size_t i = 0; i < st->len; i++) {
+        int hi = hexval(arg[2 * i]), lo = hexval(arg[2 * i + 1]);
+        if (hi < 0 || lo < 0)
+            return KDS_E_SEQUENCE;
+        st->data[i] = (uint8_t)(hi << 4 | lo);
+    }
+    return KDS_OK;
+}
+
+/* One step per line; `#` starts a comment.
+ *   out RR VVVV IIII HEXDATA|- PAUSE
+ *   in  RR VVVV IIII LENGTH PAUSE
+ * and in a power-up file also
+ *   outblob RR VVVV IIII OFFSET LENGTH PAUSE     payload from the .bin file
+ *   bulk OFFSET LENGTH PAUSE                     bulk OUT on EP 02 from the .bin file
+ *   wait ID PAUSE                                poll GetStatus until the firmware id is ID
+ * A file with a request outside the list for its kind is refused as a whole. */
+static int load(const char *path, struct kds_seq *seq, int powerup)
+{
+    const uint8_t *out_ok = powerup ? PWR_OUT_ALLOWED : OUT_ALLOWED, *in_ok = powerup ? PWR_IN_ALLOWED : IN_ALLOWED;
+    size_t n_out = powerup ? sizeof(PWR_OUT_ALLOWED) : sizeof(OUT_ALLOWED);
+    size_t n_in = powerup ? sizeof(PWR_IN_ALLOWED) : sizeof(IN_ALLOWED);
     FILE *f = fopen(path, "r");
     seq->steps = NULL;
     seq->n = 0;
@@ -445,58 +507,67 @@ int kds_seq_load(const char *path, struct kds_seq *seq)
     char *line = NULL;
     size_t cap = 0;
     int lineno = 0, rc = KDS_OK;
-    while (getline(&line, &cap, f) >= 0) {
+    while (rc == KDS_OK && getline(&line, &cap, f) >= 0) {
         lineno++;
-        char dir[8], *arg = NULL;
-        unsigned req = 0, val = 0, idx = 0;
+        char kind[12], *arg = NULL;
+        unsigned req = 0, val = 0, idx = 0, off = 0, len = 0;
         double gap = 0;
+        int pos = 0;
         char *hash = strchr(line, '#');
         if (hash)
             *hash = 0;
-        if (line[strspn(line, " \t\r\n")] == 0)
+        if (sscanf(line, "%11s %n", kind, &pos) < 1)
             continue;
-        if (sscanf(line, "%7s %x %x %x %ms %lf", dir, &req, &val, &idx, &arg, &gap) != 6
-            || req > 0xff || val > 0xffff || idx > 0xffff || gap < 0) {
-            kds_dbg(1, "%s:%d: cannot parse", path, lineno);
-            rc = KDS_E_SEQUENCE;
-        }
-        struct kds_step st = { .req = (uint8_t)req, .val = (uint16_t)val, .idx = (uint16_t)idx, .gap = gap };
-        if (rc == KDS_OK && !strcmp(dir, "out")) {
-            st.out = 1;
-            size_t n = strcmp(arg, "-") ? strlen(arg) : 0;
-            if (n % 2 || n / 2 > 0xffff)
-                rc = KDS_E_SEQUENCE;
-            st.len = (uint16_t)(n / 2);
-            st.data = malloc(st.len ? st.len : 1);
-            if (!st.data)
-                rc = KDS_E_NOMEM;
-            for (size_t i = 0; rc == KDS_OK && i < st.len; i++) {
-                int hi = hexval(arg[2 * i]), lo = hexval(arg[2 * i + 1]);
-                if (hi < 0 || lo < 0)
-                    rc = KDS_E_SEQUENCE;
-                st.data[i] = (uint8_t)(hi << 4 | lo);
-            }
-        } else if (rc == KDS_OK && !strcmp(dir, "in")) {
-            char *e;
-            long n = strtol(arg, &e, 10);
-            if (*e || n < 0 || n > 4096)
-                rc = KDS_E_SEQUENCE;
-            st.len = (uint16_t)n;
-        } else if (rc == KDS_OK) {
-            rc = KDS_E_SEQUENCE;
+        const char *rest = line + pos;
+        struct kds_step st = { 0 };
+        rc = KDS_E_SEQUENCE;
+        if (!strcmp(kind, "out")) {
+            if (sscanf(rest, "%x %x %x %ms %lf", &req, &val, &idx, &arg, &gap) == 5)
+                rc = parse_hex(arg, &st);
+            st.kind = KDS_STEP_OUT;
+        } else if (!strcmp(kind, "in")) {
+            if (sscanf(rest, "%x %x %x %u %lf", &req, &val, &idx, &len, &gap) == 5 && len <= 4096)
+                rc = KDS_OK;
+            st.kind = KDS_STEP_IN;
+            st.len = (uint16_t)len;
+        } else if (powerup && !strcmp(kind, "outblob")) {
+            if (sscanf(rest, "%x %x %x %u %u %lf", &req, &val, &idx, &off, &len, &gap) == 6 && len <= 0xffff)
+                rc = KDS_OK;
+            st.kind = KDS_STEP_OUTBLOB;
+            st.off = off;
+            st.blob_len = len;
+        } else if (powerup && !strcmp(kind, "bulk")) {
+            if (sscanf(rest, "%u %u %lf", &off, &len, &gap) == 3 && len > 0)
+                rc = KDS_OK;
+            st.kind = KDS_STEP_BULK;
+            st.off = off;
+            st.blob_len = len;
+        } else if (powerup && !strcmp(kind, "wait")) {
+            if (sscanf(rest, "%u %lf", &val, &gap) == 2 && val <= 0xff)
+                rc = KDS_OK;
+            st.kind = KDS_STEP_WAIT;
+            st.want = (uint8_t)val;
+            val = 0;
         }
         free(arg);
-        if (rc == KDS_OK && !allowed(st.out ? OUT_ALLOWED : IN_ALLOWED,
-                                     st.out ? sizeof(OUT_ALLOWED) : sizeof(IN_ALLOWED), st.req)) {
-            kds_dbg(1, "%s:%d: request %s %02x is not allowed in a scan sequence", path, lineno, dir, st.req);
+        if (rc == KDS_OK && (req > 0xff || val > 0xffff || idx > 0xffff || !(gap >= 0)))
             rc = KDS_E_SEQUENCE;
-        }
+        st.out = st.kind == KDS_STEP_OUT;
+        st.req = (uint8_t)req;
+        st.val = (uint16_t)val;
+        st.idx = (uint16_t)idx;
+        st.gap = gap;
+        int is_out = st.kind == KDS_STEP_OUT || st.kind == KDS_STEP_OUTBLOB;
+        if (rc == KDS_OK && (is_out || st.kind == KDS_STEP_IN)
+            && !allowed(is_out ? out_ok : in_ok, is_out ? n_out : n_in, st.req))
+            rc = KDS_E_SEQUENCE;
+        if (rc == KDS_OK && is_out && st.req == 0xf1 && st.val != 3)    /* the one diagnostic request of the power-up */
+            rc = KDS_E_SEQUENCE;
         struct kds_step *ns = rc == KDS_OK ? realloc(seq->steps, (size_t)(seq->n + 1) * sizeof(*ns)) : NULL;
-        if (!ns) {
-            if (rc == KDS_OK)
-                rc = KDS_E_NOMEM;
-            else
-                kds_dbg(1, "%s:%d: refused", path, lineno);
+        if (rc == KDS_OK && !ns)
+            rc = KDS_E_NOMEM;
+        if (rc != KDS_OK) {
+            kds_dbg(1, "%s:%d: refused (%s %02x)", path, lineno, kind, req);
             free(st.data);
             break;
         }
@@ -509,6 +580,140 @@ int kds_seq_load(const char *path, struct kds_seq *seq)
         rc = KDS_E_SEQUENCE;
     if (rc != KDS_OK)
         kds_seq_free(seq);
+    return rc;
+}
+
+int kds_seq_load(const char *path, struct kds_seq *seq)
+{
+    return load(path, seq, 0);
+}
+
+int kds_powerup_load(const char *path, struct kds_seq *seq)
+{
+    return load(path, seq, 1);
+}
+
+/* ---- power-up (section 6, "Native replay of the power-up open") ---------------- */
+static int read_file(const char *path, uint8_t **data, size_t *size)
+{
+    FILE *f = fopen(path, "rb");
+    *data = NULL;
+    *size = 0;
+    if (!f) {
+        kds_dbg(1, "%s: %s", path, strerror(errno));
+        return KDS_E_SEQUENCE;
+    }
+    long n = -1;
+    if (fseek(f, 0, SEEK_END) == 0)
+        n = ftell(f);
+    rewind(f);
+    if (n > 0 && n < (64L << 20) && (*data = malloc((size_t)n)) && fread(*data, 1, (size_t)n, f) == (size_t)n) {
+        *size = (size_t)n;
+        fclose(f);
+        return KDS_OK;
+    }
+    fclose(f);
+    free(*data);
+    *data = NULL;
+    return KDS_E_SEQUENCE;
+}
+
+static int drain_image_pipes(struct kds_dev *d, int timeout_ms)
+{
+    uint8_t *buf = malloc(16384);
+    int rc = buf ? KDS_OK : KDS_E_NOMEM;
+    for (int ep = 0; ep < 2 && rc == KDS_OK; ep++) {
+        int got;
+        do
+            rc = bulk_read(d, ep ? EP_IMAGE_REAR : EP_IMAGE_FRONT, buf, 16384, timeout_ms, &got);
+        while (rc == KDS_OK && got == 16384);
+    }
+    free(buf);
+    return rc;
+}
+
+/* Load firmware and FPGA image into a freshly powered scanner by replaying the vendor
+ * driver's own initialisation from a locally extracted file (PATH.seq + PATH.bin). */
+static int power_up(struct kds_dev *d, const char *seq_path)
+{
+    struct kds_seq seq;
+    uint8_t *bin = NULL, reply[4096];
+    size_t bin_size = 0;
+    char bin_path[600];
+    size_t plen = strlen(seq_path);
+    if (plen > 4 && !strcmp(seq_path + plen - 4, ".seq"))
+        plen -= 4;
+    snprintf(bin_path, sizeof(bin_path), "%.*s.bin", (int)(plen < 590 ? plen : 590), seq_path);
+
+    int rc = kds_powerup_load(seq_path, &seq);
+    if (rc != KDS_OK)
+        return rc;
+    rc = read_file(bin_path, &bin, &bin_size);
+    for (int i = 0; i < seq.n && rc == KDS_OK; i++) {   /* check everything before sending anything */
+        const struct kds_step *st = &seq.steps[i];
+        if ((st->kind == KDS_STEP_OUTBLOB || st->kind == KDS_STEP_BULK)
+            && ((size_t)st->off > bin_size || st->blob_len > bin_size - st->off)) {
+            kds_dbg(1, "%s: step %d points outside %s", seq_path, i + 1, bin_path);
+            rc = KDS_E_SEQUENCE;
+        }
+    }
+    kds_dbg(2, "power-up: %d steps, %zu payload bytes", seq.n, bin_size);
+    for (int i = 0; i < seq.n && rc == KDS_OK; i++) {
+        const struct kds_step *st = &seq.steps[i];
+        int n, got = 0;
+        if (st->gap > 0)
+            pause_s(st->gap < 2.0 ? st->gap : 2.0);
+        switch (st->kind) {
+        case KDS_STEP_BULK:
+            n = libusb_bulk_transfer(d->h, EP_BULK_OUT, bin + st->off, (int)st->blob_len, &got, PWR_TIMEOUT_MS);
+            if (n < 0 || (uint32_t)got != st->blob_len) {
+                kds_dbg(1, "power-up step %d: bulk out: %s, %d of %u bytes", i + 1, n < 0 ? libusb_error_name(n) : "short", got, st->blob_len);
+                rc = KDS_E_IO;
+            }
+            break;
+        case KDS_STEP_WAIT: {       /* a just-loaded firmware needs time to come up */
+            double deadline = now() + 15;
+            for (;;) {
+                n = libusb_control_transfer(d->h, 0xc0, REQ_GET_STATUS, 0, 0, reply, 32, 3000);
+                if (n >= 1 && reply[0] == st->want)
+                    break;
+                if (now() > deadline) {
+                    kds_dbg(1, "power-up step %d: firmware id %d did not appear", i + 1, st->want);
+                    rc = KDS_E_NO_FIRMWARE;
+                    break;
+                }
+                pause_s(0.1);
+            }
+            break;
+        }
+        case KDS_STEP_IN:
+            n = libusb_control_transfer(d->h, 0xc0, st->req, st->val, st->idx, reply, st->len, PWR_TIMEOUT_MS);
+            if (n < 0) {
+                kds_dbg(1, "power-up step %d: get %02x: %s", i + 1, st->req, libusb_error_name(n));
+                rc = KDS_E_IO;
+            }
+            break;
+        default: {                  /* OUT, with the payload in the line or in the .bin file */
+            const uint8_t *data = st->kind == KDS_STEP_OUTBLOB ? bin + st->off : st->data;
+            uint16_t len = st->kind == KDS_STEP_OUTBLOB ? (uint16_t)st->blob_len : st->len;
+            uint16_t val = st->val, idx = st->idx;
+            if (st->req == REQ_SET_TIME) {      /* now, not the captured moment */
+                uint32_t secs = (uint32_t)(time(NULL) - KODAK_EPOCH);
+                val = (uint16_t)(secs >> 16);
+                idx = (uint16_t)secs;
+            }
+            n = libusb_control_transfer(d->h, 0x40, st->req, val, idx, (unsigned char *)data, len, PWR_TIMEOUT_MS);
+            if (n < 0) {
+                kds_dbg(1, "power-up step %d: set %02x: %s", i + 1, st->req, libusb_error_name(n));
+                rc = KDS_E_IO;
+            } else if (st->req == REQ_START_CAPTURE) {  /* calibration capture, discarded */
+                rc = drain_image_pipes(d, 3000);
+            }
+        }
+        }
+    }
+    free(bin);
+    kds_seq_free(&seq);
     return rc;
 }
 
