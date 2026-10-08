@@ -106,19 +106,11 @@ def open_scanner():
         raise
 
 
-def write_labels(dev, labels, cache_file):
-    """Upload changed function labels only (they are stored in the scanner)."""
-    try:
-        cache = json.loads(cache_file.read_text())
-    except (OSError, ValueError):
-        cache = {}
+def write_labels(dev, labels):
+    """Upload the function labels. The scanner forgets them when it is switched off (F-065)."""
     for number, text in sorted(labels.items()):
-        if cache.get(str(number)) == text:
-            continue
         dev.set_label(number, text)
-        cache[str(number)] = text
-        log.info("LCD label %d: %s", number, text)
-    cache_file.write_text(json.dumps(cache))
+    log.info("LCD labels: %s", ", ".join(f"{n} = {t}" for n, t in sorted(labels.items())))
 
 
 class Station:
@@ -149,7 +141,7 @@ class Station:
         self.function = st["button"] or 1
         labels = {n: self.label(n) for n in self.functions}
         try:
-            write_labels(self.dev, labels, self.spool.root / "lcd-labels.json")
+            write_labels(self.dev, labels)
         except k.UsbError as e:
             log.warning("LCD labels not written: %s", e)
         log.info("scanner ready (function %d, %s)", self.function, "paper loaded" if st["tray"] == 2 else "feeder empty")

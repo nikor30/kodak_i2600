@@ -36,7 +36,7 @@ Start button ─ interrupt event ─ kodak_native.py              kodak-native.s
    → spool/work → img2pdf → spool/outbox → the same upload thread as kodak-scand
 ```
 - `native.functions` in the config maps LCD function numbers to profiles; a profile's `label:` is the
-  text on the scanner's LCD (stored in the scanner, rewritten only when it changes).
+  text on the scanner's LCD (uploaded every time the service connects; the scanner forgets it at power-off).
 - `native.trigger: paper` scans as soon as paper is inserted instead of waiting for Start.
 - Start with an empty feeder or an unassigned number shows a short message on the OLED and does nothing.
 - Protocol and processing are described in `docs/protocol/commands.md` and `image-processing.md`.

@@ -61,7 +61,7 @@ def main():
     signal.signal(signal.SIGTERM, lambda *a: stop.append(1))
 
     keep = set() if args.all else devnums(args.bus, args.vidpid)
-    skip = set()
+    skip = {}
     n = nbytes = 0
     end = time.time() + args.seconds if args.seconds else None
     with open(args.out, "wb") as f:
@@ -74,11 +74,13 @@ def main():
                 continue
             dev = ev[11]
             if not args.all and dev not in keep:
-                if dev in skip:
+                # A device that is still enumerating has no sysfs ids yet, so "not ours"
+                # is only remembered for a second (a power-cycled scanner comes back as a new number).
+                if skip.get(dev, 0) > time.time():
                     continue
                 keep = devnums(args.bus, args.vidpid)
                 if dev not in keep:
-                    skip.add(dev)
+                    skip[dev] = time.time() + 1
                     continue
             ts_sec, ts_usec = struct.unpack_from("<qi", ev, 16)
             f.write(struct.pack("<IIII", ts_sec & 0xFFFFFFFF, ts_usec, len(ev), len(ev)))
