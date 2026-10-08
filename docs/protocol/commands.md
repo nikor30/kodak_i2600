@@ -240,7 +240,7 @@ Message types (N: the vendor's message table and loader; meanings are hyp. until
 
 | Type | Ids | Use |
 |---|---|---|
-| 1 | button number | text label of a function number (set from the TWAIN `SetOcpButtons` task: button number + text). Not sent by the SANE path, so never captured. P (2026-10-08, owner's go-ahead): uploads for ids 1–3 with wValue `(n << 8) \| 1` are accepted by the scanner |
+| 1 | button number | text label of a function number (set from the TWAIN `SetOcpButtons` task: button number + text). Not sent by the SANE path, so never captured. P (2026-10-08): uploads for ids 1–3 with wValue `(n << 8) \| 1` are accepted and **shown on the LCD next to the function number** (confirmed by the owner) |
 | 2 | 0…3 | fixed, translated messages, loaded when the stored `lcd_messages_version`/language differs |
 | 3 | 1…3 | fixed, translated messages |
 | 4 | 1, 2, 3, 4, 5, 8, 9 | fixed, translated messages. **Id 1 is uploaded on every open** ("Rescan documents"; the vendor calls it the "disconnected while scanning" message) |
