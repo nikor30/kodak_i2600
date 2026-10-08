@@ -248,7 +248,7 @@ class Station:
                 except queue.Empty:
                     ev = None
                 if ev is not None:
-                    log.debug("event %s", ev.hex(" "))
+                    log.info("event %s (%s)", ev.hex(" "), k.EVENT_NAMES.get(ev[0], "?"))
                     if ev[0] == ks.EV_FUNCTION:
                         self.function = ev[2]
                         self.show_ready()
@@ -266,6 +266,10 @@ class Station:
                 if time.time() >= next_poll:     # notices an unplugged or power-cycled scanner
                     next_poll = time.time() + 5
                     st = self.dev.status()
+                    states = {f: st[f] for f in ("power", "tray", "interlock", "lamp", "udds", "error")}
+                    if states != getattr(self, "_states", None):     # for the log: sleep, paper, cover
+                        log.info("status %s", " ".join(f"{f}={v}" for f, v in states.items()))
+                        self._states = states
                     if st["fw_id"] != 3:
                         raise k.UsbError("scanner lost its firmware (power cycle?)")
                     # Cheap insurance: should anything switch the events off (another program
