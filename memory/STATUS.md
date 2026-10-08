@@ -3,11 +3,11 @@
 _Last updated: 2026-10-08_
 
 **Current phase:** Phase 2/4 on the Pi itself. **The Pi now runs `kodak-native.service` (ADR-015, F-060)**: native driver, Start button, LCD labels; kodak-scand/kodak-saned (vendor driver under box64) are disabled but installed as the fallback (`sudo ./install.sh` in `pi/scan-station/` switches back, `DRIVER=native` switches forward).
-**Confirmed 2026-10-08:** Start → scan → Paperless works end to end (F-061). LCD labels confirmed by the owner (F-062). Gray, b/w, 3-sheet stack and double-sided sheet confirmed (F-063, F-064). **Still to test:** b/w with the new threshold 200 on faint print; behaviour after long scanner idle/sleep: one Start press was lost after ~35 min idle (F-066, Q-029), cause open; the service now logs events and state changes. Power cycle recovery works through the vendor fallback (F-065). **Native power-up is installed but untested** (F-067, ADR-016): a full power-up capture was made, `/etc/kodak-scan/firmware/powerup.json` exists, and the next scanner power cycle will try the native replay first (vendor fallback on failure). Released as **v0.1.1** (v0.1.0 was the first release, same day).
+**Confirmed 2026-10-08:** Start → scan → Paperless works end to end (F-061). LCD labels confirmed by the owner (F-062). Gray, b/w, 3-sheet stack and double-sided sheet confirmed (F-063, F-064). **Still to test:** b/w with the new threshold 200 on faint print; behaviour after long scanner idle/sleep: one Start press was lost after ~35 min idle (F-066, Q-029), cause open; the service now logs events and state changes. Power cycle recovery works through the vendor fallback (F-065). **Native power-up works (F-075, ADR-016):** on the power cycle at 15:06 the service loaded firmware and FPGA itself from `/etc/kodak-scan/firmware/powerup.json` in 10.1 s, no vendor fallback; a scan after a native power-up is still to be confirmed. Released as **v0.1.1** (v0.1.0 was the first release, same day).
 **Known now:** commands are vendor control requests on EP0 (F-041), 69 request names (F-043), status block incl. paper/cover/function number (F-045, F-051), **button and panel events read natively** (F-051), scan start/stop sequence (F-052), **raw RGB image format** (F-053), LCD bitmap upload (F-046), SetTime (F-050), power-up firmware sequence (F-048).
 **First native scan done (F-056):** `tools/kdsprobe/native_scan.py` scans one sheet color 300 dpi duplex by replaying the captured start sequence; raw images only (no crop/deskew), and only on a scanner the vendor driver has initialised since power-up.
 **Image processing done (F-059):** `kds_pages.py` turns the raw streams into cropped, deskewed, colour-corrected pages and a PDF, and can queue it in the station's upload spool.
-**Not known yet:** the mode-dependent setup registers and config fields (Q-026), page ends / stream length (Q-028), whether the native power-up replay works on the device and is stable between power-ups (Q-027).
+**Not known yet:** the mode-dependent setup registers and config fields (Q-026), page ends / stream length (Q-028), whether the native power-up is repeatable over many power cycles and whether scanning after it behaves the same (Q-027).
 
 ## Done
 - Phase 0: research, plan, memory, driver inventory (F-010…F-016), real USB descriptors (F-017…F-019).
@@ -24,14 +24,14 @@ B2. Start-button sensor with the owner at the panel (`scanimage -A` after a pres
 B3. Spool test: `memory-pages 0` and a stack; cancel inside a page (Q-031: does OperationStop stop the feeder?).
 B3b. **Deskew is in (F-073), offline-verified; needs one stack through scanimage on the device** (expect `skew x.xx deg` in the debug log and pages of about 2442 × 3458).
 B3c. **LCD labels are in (F-074), upload accepted; needs the owner's eyes:** with kodak-native stopped, `scanimage -A` using a config with `label` lines, then look at the display and press ▲/▼.
-B4. Then: power-up replay in C (section 6) **after** the Python replay has passed a real power cycle (N5), `make install`, and a SANE-client station to replace kodak-native.
+B4. Then: power-up replay in C (section 6) (the Python replay has passed a real power cycle, F-075; port it once a scan after it is confirmed), `make install`, and a SANE-client station to replace kodak-native.
 
 ## Next actions (native driver)
 N1. (multi-sheet done, F-057) Other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
 N2. (image processing done, F-059) Next: verify the rear side with a double-sided sheet (Q-030); make processing faster (rotation); then one command/daemon that does native scan → process → spool, triggered by the Start button.
 N3. Native panel daemon (quick win for the owner's wish): events → Start button + function number → trigger the existing station profile; replaces the 2 s box64 poll. Needs a design decision with the owner (changes ADR-010; the vendor driver claims the interface while it is open).
 N4. LCD function labels (Q-025): owner's go-ahead needed (persistent write, format only known from vendor code).
-N5. **Test the native power-up (Q-027):** owner power-cycles the scanner; watch `journalctl -u kodak-native -f` for `loading its firmware natively` → `native power-up done` (or `failed` + vendor fallback), then scan one sheet. Capture it with `usbmon_capture.py` for comparison with `power-up-1`. If it misbehaves: move `/etc/kodak-scan/firmware/powerup.json` away and power-cycle again.
+N5. (native power-up passed its first power cycle, F-075.) Left: owner scans one sheet after a native power-up; watch the next power cycles for `native power-up failed`. If it misbehaves: move `/etc/kodak-scan/firmware/powerup.json` away and power-cycle again.
 N6. C SANE backend: **started**, see the section above (`libsane-dev`, `libusb-1.0-0-dev`, `sane-utils` installed on the Pi 2026-10-08).
 
 ## Next actions (station, from before)
