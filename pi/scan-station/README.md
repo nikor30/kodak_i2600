@@ -22,11 +22,27 @@ replaced by the native backend without touching this service.
 | Trigger | **Start button**; ▲/▼ pick the profile, the scanner's LCD shows its label | paper in the feeder (2 s poll) |
 | Scan modes | always color 300 dpi duplex; gray, black/white, simplex and blank removal in software | whatever the vendor backend offers |
 | Idle cost | one small Python process, no emulation | saned under box64, polled every 2 s |
-| After a scanner power cycle | runs the vendor driver once (~15 s) to load the firmware, then native | – |
+| After a scanner power cycle | loads the firmware natively if a local power-up file exists (see below; not yet proven on the device), otherwise or on failure runs the vendor driver once (~25 s), then native | – |
 | Status | new (2026-10-08), color/gray/bw at 300 dpi only | proven, but goes stale after idle time (F-038, F-054) |
 
 Switch: `sudo DRIVER=native ./install.sh` or `sudo ./install.sh` (vendor). Both use the same config,
 spool, uploader and OLED status. They never run together (`Conflicts=`).
+
+### Native power-up (optional, experimental)
+After power-on the scanner has only a boot firmware; the host must load the rest. The native
+service can replay the vendor driver's own initialisation from a file you make locally once:
+
+1. Stop the service, start `sudo tools/usbcap/usbmon_capture.py -o CAPTURE.pcap` (`--bus N` for the scanner's bus) and wait
+   until it reports that it is running.
+2. Switch the scanner off and on, then let the vendor driver open it once
+   (`scanimage -A` under box64, or start the service again and let its fallback do it).
+3. Stop the capture (it should report 0 dropped events) and run
+   `tools/usbcap/extract_powerup.py CAPTURE.pcap /etc/kodak-scan/firmware/` as root; keep the
+   directory `0700`.
+
+`powerup.bin` **contains Kodak's firmware: keep it on your machine, never commit or share it.**
+Without the file, or if the replay fails, the service falls back to the vendor driver, so the
+setup in `pi/phase1/` stays a prerequisite. Path: `native.powerup` in the config.
 
 ### Native station
 ```

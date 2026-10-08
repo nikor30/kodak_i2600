@@ -54,3 +54,5 @@ native:                                  # kodak-native.service (native driver; 
   # (default: the profile name). The native driver always scans color 300 dpi duplex and
   # derives mode (Color/Gray/Lineart), duplex (both/front) and blank-page removal from `sane:`.
   # Black/white profiles: optional `bw_threshold: 200` (0-255; higher = more turns black).
+  # powerup: /etc/kodak-scan/firmware/powerup.json   # local power-up file (README, "Native power-up");
+  #                                                  # absent = the vendor driver loads the firmware

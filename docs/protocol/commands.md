@@ -114,7 +114,8 @@ Names are the vendor's own (N). "Seen" says where the request shows up in our ca
 
 `X*`: part of the vendor's normal power-up initialisation (section 6). A native driver cannot
 avoid it after a power cycle; it is to be handled as a verbatim replay of a full capture and
-needs an explicit decision before any code sends it.
+needs an explicit decision before any code sends it. Decision: ADR-016 (replay of a locally
+extracted capture, request allow-list, see "Native replay of the power-up open" in section 6).
 
 ## 3. GetStatus block (`C0 00`, 32 bytes)
 
@@ -221,6 +222,28 @@ The scanner enumerates with a boot firmware (bcdDevice 1.02) and the host loads 
 
 The images are host-side files/resources of the vendor driver (`loader`, `fpga`, `scanner0…3`;
 N). They are vendor firmware: never committed, to be extracted locally by the user.
+
+### Native replay of the power-up open (C: `power-up-1`, full payloads; ADR-016)
+`tools/usbcap/extract_powerup.py` cuts the power-up open out of a capture into `powerup.json`
+(request list) and `powerup.bin` (payloads ≥ 256 bytes and all bulk data). On the owner's unit:
+743 steps, of which 351 bulk-OUT transfers on EP `0x02` with 5,748,852 bytes in total (the same
+size as in T).
+
+- Window: from the first GetStatus reporting firmware id 1 before the first `21` to the
+  `11` SetLamp 0 that ends the vendor's open.
+- Left out: `35` NVRam write and `62` LCDPopulate (permanent storage / not needed).
+- Requests in the replay. OUT: `21`, `a0`, `20`, `f1` (v=3 only), `a3`, `37`, `1f`, `18`, `11`,
+  `e0`, `30`, `17`. IN: `00`, `f2`, `a3`, `02`, `34`, `36`, `37`, `03`, `35`, `e3`, `e2`, `e0`,
+  `32`, `33`. A file containing anything else is refused before the first request is sent.
+- `1f` SetTime is sent with the current time, not the captured one.
+- `00` GetStatus steps are waits: poll until the firmware id equals the captured one (the
+  device does not answer while a freshly loaded firmware starts).
+- After `17` (calibration capture) both image pipes are read until a short block, data discarded.
+- Start condition: firmware id 1 (boot firmware). End condition: firmware id 3.
+
+**Status: not yet run against the device** (the file passes the allow-list check offline; the
+first real power cycle with it is still to come). Arguments of `18`, `a3`, `e0`, `f1`/`f2` in
+this sequence are not decoded; they are sent exactly as captured.
 
 ## 7. Operator panel (LCD)
 

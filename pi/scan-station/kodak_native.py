@@ -10,8 +10,9 @@ Driver: kds_usb / kds_scan / kds_image (protocol: docs/protocol/). The scan itse
 always color 300 dpi duplex (the one captured sequence); gray, black/white and simplex
 profiles are derived from it in software.
 
-After a power cycle the scanner needs its firmware, which only the vendor driver can load
-so far: the service then runs the vendor driver once (box64, ~15 s) and carries on natively.
+After a power cycle the scanner needs its firmware. If /etc/kodak-scan/firmware/powerup.json
+exists (made locally from a capture with tools/usbcap/extract_powerup.py) the service loads it
+natively; otherwise, or if that fails, it runs the vendor driver once (box64, ~25 s).
 """
 import argparse
 import datetime as dt
@@ -39,6 +40,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 VENDOR_OPEN = ["/usr/local/sbin/kodak-x86", "/usr/bin/env", "BOX64_LOG=0", "BOX64_NOBANNER=1",
                "/usr/local/bin/box64", "/usr/bin/scanimage", "-d", "kds_i2000:i2000", "-A"]
 NATIVE_DEFAULTS = {"trigger": "button", "functions": {1: None}, "sequence": "color300-duplex",
+                   "powerup": "/etc/kodak-scan/firmware/powerup.json",
                    "workers": 3, "max_pages_in_memory": 6}
 
 
@@ -88,10 +90,19 @@ def vendor_open():
         subprocess.run(["/usr/local/sbin/kodak-x86", "umount"], capture_output=True)
 
 
-def open_scanner():
+def open_scanner(powerup_file):
     dev = ks.Scanner()
     try:
         st = dev.status()
+        if st["fw_id"] != 3 and pathlib.Path(powerup_file).is_file():
+            log.info("scanner was power-cycled: loading its firmware natively")
+            t = time.time()
+            try:
+                st = dev.power_up(powerup_file)
+                log.info("native power-up done in %.1f s", time.time() - t)
+            except Exception as e:  # noqa: BLE001 (anything here falls back to the vendor driver)
+                log.error("native power-up failed: %s", e)
+                st = {"fw_id": 0}
         if st["fw_id"] != 3:
             dev.close()
             vendor_open()
@@ -137,7 +148,7 @@ class Station:
                         if self.function in self.functions else f"{self.function}: not used", **extra)
 
     def connect(self):
-        self.dev, st = open_scanner()
+        self.dev, st = open_scanner(self.ncfg["powerup"])
         self.function = st["button"] or 1
         labels = {n: self.label(n) for n in self.functions}
         try:

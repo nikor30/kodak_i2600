@@ -28,6 +28,15 @@ SIDES = {EP_FRONT: "front", EP_REAR: "rear"}
 SEQ_OUT = {0x3A, 0x1B, 0x32, 0x31, 0x11, 0x45, 0x37, 0xA3, 0xE0, 0x30, 0x10, 0x17}
 SEQ_IN = {0x00, 0x32, 0x35, 0x37, 0xA3, 0xE0}
 
+# Requests of the power-up initialisation (docs/protocol/commands.md section 6). Everything here
+# is volatile: firmware and FPGA image go into RAM and are gone at power-off. Requests that write
+# permanent storage (NVRam 35, EEPROM a2, flash, firmware update 23/24) are not in the lists, so a
+# power-up file containing one is refused.
+PWR_OUT = {0x21, 0xA0, 0x20, 0xF1, 0xA3, 0x37, 0x1F, 0x18, 0x11, 0xE0, 0x30, 0x17}
+PWR_IN = {0x00, 0xF2, 0xA3, 0x02, 0x34, 0x36, 0x37, 0x03, 0x35, 0xE3, 0xE2, 0xE0, 0x32, 0x33}
+EP_BULK_OUT = 0x02
+KODAK_EPOCH = 978307200          # 2001-01-01 00:00:00 UTC, for SetTime
+
 EV_END_OF_OPERATION, EV_BUTTON, EV_TRAY, EV_INTERLOCK, EV_FUNCTION = 0x01, 0x20, 0x13, 0x16, 0x60
 EV_IMAGING_COMPLETE, EV_PAGE_EXIT = 0x42, 0x41
 EV_ERRORS = {0x30: "paper jam", 0x31: "multifeed", 0x32: "buffer overflow", 0x34: "scanner error"}
@@ -273,6 +282,79 @@ class Scanner(k.Device):
             result["error"] = "image data ended inside a page"
         result["pages"] = {s.side: s.pages for s in splitters.values()}
         return result
+
+    # ---- power-up ------------------------------------------------------------
+    def _ctrl(self, bm, req, value, index, data_or_len, timeout=5000):
+        if bm == 0x40:
+            data = bytes(data_or_len)
+            self._check(self.lib.libusb_control_transfer(
+                self.h, 0x40, req, value, index, data, len(data), timeout), f"set 0x{req:02x}")
+            return b""
+        buf = ctypes.create_string_buffer(max(data_or_len, 1))
+        n = self._check(self.lib.libusb_control_transfer(
+            self.h, 0xC0, req, value, index, buf, data_or_len, timeout), f"get 0x{req:02x}")
+        return buf.raw[:n]
+
+    def power_up(self, json_path):
+        """Load firmware and FPGA image into a freshly powered scanner by replaying the vendor's
+        own initialisation (extracted locally with tools/usbcap/extract_powerup.py)."""
+        json_path = pathlib.Path(json_path)
+        steps = json.loads(json_path.read_text())["steps"]
+        blob = json_path.with_suffix(".bin").read_bytes()
+        for st in steps:                       # check everything before sending anything
+            if "bulk" in st:
+                if st["bulk"] != EP_BULK_OUT & 0x7F:
+                    raise ValueError("power-up file: unexpected bulk endpoint")
+            elif st["req"] not in (PWR_OUT if st["bm"] == 0x40 else PWR_IN) or st["bm"] not in (0x40, 0xC0):
+                raise ValueError(f"power-up file: request {st['bm']:02x} {st['req']:02x} is not allowed")
+            elif st["req"] == 0xF1 and st["val"] != 3:
+                raise ValueError("power-up file: unexpected diagnostic request")
+        if self.status()["fw_id"] != 1:
+            raise NotReady("scanner is not in its power-up state")
+        self.claim()
+        for st in steps:
+            if st["gap"]:
+                time.sleep(min(st["gap"], 2.0))
+            if "bulk" in st:
+                off, ln = st["blob"]
+                data = blob[off:off + ln]
+                got = ctypes.c_int(0)
+                self._check(self.lib.libusb_bulk_transfer(self.h, EP_BULK_OUT, data, ln, ctypes.byref(got), 5000), "bulk out")
+                if got.value != ln:
+                    raise k.UsbError("bulk out: short write")
+                continue
+            bm, req, val, idx = st["bm"], st["req"], st["val"], st["idx"]
+            if bm == 0x40:
+                data = blob[st["blob"][0]:st["blob"][0] + st["blob"][1]] if "blob" in st else bytes.fromhex(st["data"])
+                if req == 0x1F:                # SetTime: now, not the captured moment
+                    secs = int(time.time()) - KODAK_EPOCH
+                    val, idx = secs >> 16, secs & 0xFFFF
+                self._ctrl(0x40, req, val, idx, data)
+                if req == 0x17:                # calibration capture: one short block per side, discarded
+                    for ep in (EP_FRONT, EP_REAR):
+                        while len(self._bulk(ep, 16384, 3000)) == 16384:
+                            pass
+            elif req == 0x00:
+                # The vendor waits here for the just-loaded firmware to come up: poll until the
+                # running firmware id matches the recorded one.
+                want = bytes.fromhex(st["data"])[0]
+                deadline = time.time() + 15
+                while True:
+                    try:
+                        got = self._ctrl(0xC0, 0, 0, 0, 32, timeout=3000)
+                    except k.UsbError:
+                        got = b""
+                    if got[:1] == bytes((want,)):
+                        break
+                    if time.time() > deadline:
+                        raise ScanError(f"power-up: firmware id {got[:1].hex() or '?'} instead of {want:02x}")
+                    time.sleep(0.1)
+            else:
+                self._ctrl(0xC0, req, val, idx, st["len"])
+        st = self.status()
+        if st["fw_id"] != 3:
+            raise ScanError(f"power-up finished but firmware id is {st['fw_id']}")
+        return st
 
     # ---- panel ---------------------------------------------------------------
     def set_label(self, number, text):
