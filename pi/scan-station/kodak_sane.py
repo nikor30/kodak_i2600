@@ -183,11 +183,12 @@ class Station:
         self.dev.mode = "Color" if mode == "color" else "Gray"      # black/white is made here, from gray
         self.dev.source = "ADF Duplex" if duplex else "ADF Front"
         t0 = time.time()
+        log.info("Start on function %d → profile %s", number, name)
         try:
             self.dev.start()
         except sane._sane.error as e:
             reason = "no paper" if str(e) == NO_DOCS else str(e)
-            log.info("Start on function %d: not started: %s", number, reason)
+            log.info("not started: %s", reason)
             self.status.set(state="error", error=reason.capitalize())
             time.sleep(2)
             if str(e) != NO_DOCS and "cover" not in str(e).lower():
@@ -196,7 +197,6 @@ class Station:
 
         job = self.spool.new_job()
         workdir = self.spool.work / job
-        log.info("job %s: Start on function %d → profile %s", job, number, name)
         self.status.set(state="scanning", pages=0, error=None)
         results, error = [], None
         try:
