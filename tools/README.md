@@ -7,4 +7,6 @@
 | `re/` | `elftables.py`: read id→name tables out of the vendor libraries |
 | `kdsprobe/` | native, read-only access to the scanner over libusb (no vendor driver): `kdsprobe.py info`, `kdsprobe.py watch`. Sends only requests classified as safe in `docs/protocol/commands.md` |
 
+`kdsprobe/native_scan.py`: experimental native scan (replays a captured scan start, color 300 dpi duplex).
+
 Planned: `mockdev/` (replay device for backend tests).

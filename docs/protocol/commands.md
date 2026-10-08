@@ -285,6 +285,22 @@ bytes): offset 6 `0e5d` (3677), 10 `02fa` (762), 13–16 and 18–21 `0377`, `01
   no deskew. Cropping, deskew, colour correction and blank-page detection are host work (the vendor's hippo).
 - The rear stream starts ~0.2 s before the front one.
 - The pre-scan block ends with tagged trailer bytes (`… 00 38 01 ff`); layout open.
-- **Open:** how a page ends inside a multi-sheet batch, and whether the front stream of this capture is
-  complete: it has 3,113 lines against 3,708 on the rear, so either the capture lost bulk data or the
-  streams are not equally long.
+- **End of a page/stream** (P: native scan, one sheet): the scanner keeps sending lines until the sheet
+  has left (front 3,922 lines, rear 3,914 for an A4 sheet: about 200 background lines above and below
+  it), then a short tagged trailer (284 bytes front, 228 rear, not a multiple of the line length) whose
+  last four bytes are `00 nn 01 ff`. After that the pipes are silent. Trailer layout and page boundaries
+  in a multi-sheet batch are **open**.
+- The front stream in the `station-scan-1` capture is short (3,113 lines) because the capture tool lost
+  bulk events, not because the scanner sent less.
+
+### Native replay (P, 2026-10-08)
+`tools/kdsprobe/native_scan.py` replayed the 319 captured control requests of steps 1–4 verbatim (same
+order and pauses) on an idle, vendor-initialised scanner with one sheet loaded, then read both pipes in
+parallel with 256 KiB bulk requests until End of Operation. Result: the same event sequence as the vendor
+run plus `41 01 01` Page Exit, and two complete images. So the sequence does not depend on host-side state.
+51 of the IN replies differed from the capture: all are `a3` reads at `da1a/1c/1e` and `db1a/1c/1e`
+(values that change from read to read; hyp.: live sensor/white-patch levels the vendor samples). Sending
+the captured writes regardless still gave a good image.
+
+Requests this makes usable for scanning in color 300 dpi duplex (class `W`, exactly as captured):
+`3a`, `1b`, `32`, `31`, `11`, `45`, `37`, `30`, `10`, `17`, and the captured `a3`/`e0` register writes.
