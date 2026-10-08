@@ -285,11 +285,19 @@ bytes): offset 6 `0e5d` (3677), 10 `02fa` (762), 13–16 and 18–21 `0377`, `01
   no deskew. Cropping, deskew, colour correction and blank-page detection are host work (the vendor's hippo).
 - The rear stream starts ~0.2 s before the front one.
 - The pre-scan block ends with tagged trailer bytes (`… 00 38 01 ff`); layout open.
-- **End of a page/stream** (P: native scan, one sheet): the scanner keeps sending lines until the sheet
-  has left (front 3,922 lines, rear 3,914 for an A4 sheet: about 200 background lines above and below
-  it), then a short tagged trailer (284 bytes front, 228 rear, not a multiple of the line length) whose
-  last four bytes are `00 nn 01 ff`. After that the pipes are silent. Trailer layout and page boundaries
-  in a multi-sheet batch are **open**.
+- **Pages and trailers** (P: native scans of 1 and 3 sheets). Each side's stream is a plain sequence of
+  pages. A page is a whole number of 7,740-byte lines (about 3,900–3,920 for A4: the sheet plus ~200
+  background lines above and below), followed directly by a trailer:
+  - 32 bytes of tags, each `value(2, big endian) 01 tag`, except the first which has a 6-byte value:
+    `00 01 00 00 nn nn 02 f5` (nnnn = **image number**: 1 for the pre-scan block, then 2, 3, 4 … per
+    sheet, the same on both sides), `01 f6` = 0, `01 f9` = 2, `01 fa` = 2, `01 fc` = `050a` (1290 = half
+    the line width in pixels), `01 fd` = 0 (1 in the pre-scan block), `01 fe` = 0. Meanings other than the
+    image number are open.
+  - `2 × k` filler bytes (leftover pixel-like data), then `00 k 01 ff`.
+  The next page's first line follows immediately. After the last trailer the pipes are silent.
+- Events per sheet: `42 00 00 00 nn` Imaging Complete (image number) and `41 ss xx` Page Exit (ss = sheet
+  count); at the end `01 05 ss 00 ss` End of Operation with ss = number of sheets fed.
+- Speed (P): 3 A4 sheets, 181 MB, from OperationStart to End of Operation in 7.2 s.
 - The front stream in the `station-scan-1` capture is short (3,113 lines) because the capture tool lost
   bulk events, not because the scanner sent less.
 
