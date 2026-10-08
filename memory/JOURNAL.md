@@ -131,3 +131,4 @@
 - Release v0.2.0 on the owner's request: branch pushed, tag on the branch head (PR #7 into `main` still to be merged by the owner).
 - Owner: use our own native driver for the station. Wrote `kodak_sane.py` + `kodak-sane.service` (ADR-018), `DRIVER=sane` in install.sh, GetStatus rate limit in the backend's sensor reads; installed and switched over at 15:43 (F-083). Test job with the owner is next.
 - First job through kodak-sane (F-084): 6.1 s from Start to the uploaded PDF. (The switch-over was at 15:39, not 15:43 as F-083 says.)
+- Stack through kodak-sane (F-085): 3 sheets in 9.0 s, blank backs dropped.
