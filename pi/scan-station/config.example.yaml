@@ -32,3 +32,25 @@ paperless:
   url: http://paperless.example:8000     # base URL, without /api
   timeout: 300                           # seconds per upload
   retry_interval: 60                     # seconds between retries while Paperless is unreachable
+
+oled:                                    # optional: status display on the PoE HAT (B) (kodak-oled.service)
+  rotate: 0                              # 180 if the text is upside down
+  contrast: 96                           # 0–255
+  screensaver: true                      # starfield + bouncing IP while idle ("Ready", nothing to upload)
+  screensaver_after: 30                  # seconds of idle before it starts
+
+fan:                                     # PoE HAT (B) fan: on/off thermostat (the HAT has no PWM)
+  enabled: true                          # false: leave the fan alone
+  on_temp: 60                            # °C CPU: fan on at or above
+  off_temp: 50                           # °C CPU: fan off at or below
+
+native:                                  # kodak-native.service (native driver; replaces kodak-scand + kodak-saned)
+  trigger: button                        # button = scan when Start is pressed | paper = scan when paper is inserted
+  functions:                             # function number on the scanner's LCD (▲/▼) → profile
+    1: color300
+    2: gray300
+    3: bw300
+  # A profile's optional `label:` is the text shown next to its number on the scanner's LCD
+  # (default: the profile name). The native driver always scans color 300 dpi duplex and
+  # derives mode (Color/Gray/Lineart), duplex (both/front) and blank-page removal from `sane:`.
+  # Black/white profiles: optional `bw_threshold: 200` (0-255; higher = more turns black).

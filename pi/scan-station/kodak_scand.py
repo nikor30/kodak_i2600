@@ -20,6 +20,7 @@ import os
 import pathlib
 import shutil
 import signal
+import sys
 import threading
 import time
 import uuid
@@ -31,6 +32,11 @@ import yaml
 
 log = logging.getLogger("kodak-scand")
 NO_DOCS = "Document feeder out of documents"
+# Exit status that asks systemd to restart kodak-saned (ExecStopPost in the unit): the
+# vendor stack inside a long-running saned can get stuck after a device I/O error (F-038).
+EXIT_RESTART_SANED = 75
+RESTART_SANED_AFTER = 3        # scanner errors in a row
+RESTART_SANED_INTERVAL = 600   # seconds between two requests (scanner switched off …)
 
 DEFAULTS = {
     "device": "net:127.0.0.1:kds_i2000:i2000",
@@ -68,6 +74,28 @@ class Spool:
         return job
 
 
+class Status:
+    """What the service is doing, for the OLED (kodak-oled): $RUNTIME_DIRECTORY/status.json."""
+
+    def __init__(self, spool):
+        run = os.environ.get("RUNTIME_DIRECTORY")
+        self.path = pathlib.Path(run.split(":")[0], "status.json") if run else None
+        self.spool, self.lock, self.data = spool, threading.Lock(), {"state": "starting"}
+
+    def set(self, **changes):
+        if self.path is None:
+            return
+        with self.lock:
+            self.data.update(changes)
+            self.data["queued"] = len(list(self.spool.outbox.glob("*.pdf")))
+            try:
+                tmp = self.path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(self.data))
+                tmp.rename(self.path)
+            except OSError as e:
+                log.warning("status file: %s", e)
+
+
 # ------------------------------------------------------------------ scanning --
 def open_device(cfg, profile):
     dev = sane.open(cfg["device"])
@@ -92,11 +120,12 @@ def save_page(im, path, profile):
     return path
 
 
-def scan_stack(dev, spool, job, profile):
+def scan_stack(dev, spool, job, profile, status):
     """First frame is already started. Returns (pages, error or None)."""
     workdir, pages = spool.work / job, 0
     try:
         while True:
+            status.set(state="scanning", pages=pages)
             im = dev.snap(no_cancel=True)
             pages += 1
             save_page(im, workdir / f"page-{pages:04d}", profile)
@@ -145,32 +174,54 @@ def recover_work(spool, profile):
         finish_job(spool, workdir.name, profile, incomplete=True)
 
 
-def scanner_loop(cfg, spool, stop, wake_uploader):
+def saned_restart_due(spool):
+    """True at most once per RESTART_SANED_INTERVAL; the time stamp survives our restart."""
+    stamp = spool.root / "saned-restart"
+    try:
+        if time.time() - stamp.stat().st_mtime < RESTART_SANED_INTERVAL:
+            return False
+    except OSError:
+        pass
+    stamp.touch()
+    return True
+
+
+def scanner_loop(cfg, spool, stop, wake_uploader, status):
+    """Returns the process exit status."""
     profile = cfg["profiles"][cfg["profile"]]
-    dev, backoff = None, 5
+    dev, backoff, failures = None, 5, 0
     sane.init()
     while not stop.is_set():
         try:
             if dev is None:
                 dev = open_device(cfg, profile)
                 backoff = 5
+                status.set(state="ready", error=None)
             try:
                 dev.start()
             except sane._sane.error as e:
                 if str(e) == NO_DOCS:
+                    failures = 0
                     stop.wait(cfg["poll_interval"])
                     continue
                 raise
             job = spool.new_job()
             log.info("job %s: paper detected, scanning", job)
             t0 = time.monotonic()
-            pages, err = scan_stack(dev, spool, job, profile)
+            pages, err = scan_stack(dev, spool, job, profile, status)
             log.info("job %s: %d frames in %.1f s", job, pages, time.monotonic() - t0)
             if finish_job(spool, job, profile, incomplete=err is not None):
                 wake_uploader.set()
             if err is not None:
                 raise err
+            failures = 0
+            status.set(state="ready", error=None)
         except Exception as e:
+            failures += 1
+            status.set(state="error", error=str(e))
+            if failures >= RESTART_SANED_AFTER and saned_restart_due(spool):
+                log.error("scanner: %s; %d errors in a row, asking for a kodak-saned restart", e, failures)
+                return EXIT_RESTART_SANED
             log.error("scanner: %s; reopening in %d s", e, backoff)
             if dev is not None:
                 try:
@@ -182,6 +233,7 @@ def scanner_loop(cfg, spool, stop, wake_uploader):
             backoff = min(backoff * 2, 60)
     if dev is not None:
         dev.close()
+    return 0
 
 
 # ------------------------------------------------------------------- upload --
@@ -230,7 +282,7 @@ class Paperless:
         return r.text.strip().strip('"')   # consumption task id
 
 
-def uploader_loop(cfg, spool, stop, wake):
+def uploader_loop(cfg, spool, stop, wake, status):
     pl = Paperless(cfg["paperless"])
     if not pl.configured():
         log.error("Paperless url/token not configured: scans stay in %s", spool.outbox)
@@ -253,6 +305,7 @@ def uploader_loop(cfg, spool, stop, wake):
                     dest = spool.sent
                 shutil.move(str(pdf), dest / pdf.name)
                 shutil.move(str(meta_file), dest / meta_file.name)
+        status.set()   # refresh the queue count
         cutoff = time.time() - cfg["keep_sent_days"] * 86400
         for f in spool.sent.iterdir():
             if f.stat().st_mtime < cutoff:
@@ -269,16 +322,21 @@ def main():
     cfg = load_config(args.config)
     spool = Spool(cfg["spool_dir"])
     recover_work(spool, cfg["profiles"][cfg["profile"]])
+    status = Status(spool)
+    status.set()
 
     stop, wake = threading.Event(), threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: (stop.set(), wake.set()))
-    up = threading.Thread(target=uploader_loop, args=(cfg, spool, stop, wake), name="upload", daemon=True)
+    up = threading.Thread(target=uploader_loop, args=(cfg, spool, stop, wake, status), name="upload", daemon=True)
     up.start()
     wake.set()   # upload whatever is left in the outbox right away
     threading.current_thread().name = "scan"
-    scanner_loop(cfg, spool, stop, wake)
+    code = scanner_loop(cfg, spool, stop, wake, status)
+    stop.set()
+    wake.set()
     up.join(timeout=10)
+    sys.exit(code)
 
 
 if __name__ == "__main__":

@@ -78,3 +78,35 @@
 - Feasibility: saned under box64 plus python3-sane via the net backend works; NO_DOCS polling is instant (F-035).
 - Wrote `pi/scan-station/` (kodak_scand.py, units, install.sh, config example, README). Installed on the Pi; both services active, polling, ~0.5 % CPU idle. Upload not tested yet (no Paperless URL/token).
 - Owner gave the Paperless address `http://192.168.10.242:8000` (the DNS name `paperless.niko.de` → 192.168.100.11 was unreachable from the Pi's WLAN) and the token (stored in /etc/kodak-scan/paperless-token, 600). The 3 spooled stacks uploaded at once (F-036). The token user can't read tags/tasks/documents (403).
+
+## 2026-10-01: OLED status display (PoE HAT (B))
+- Owner asked for the HAT's OLED to show the IP and scan activity. Enabled I2C (persistent), found `0x3c` OLED + `0x20` fan controller (F-037).
+- Added `pi/scan-station/kodak_oled.py` + `kodak-oled.service`; kodak-scand now writes `/run/kodak-scan/status.json` (ADR-011). Installed; all three services active. Layout checked by rendering the frames to a PNG; the real panel still needs the owner's eyes (`oled.rotate: 180` if upside down) and a scan with paper to see "Scanning page N".
+- Found while installing: kodak-scand had been failing for ~29 h with `Error during device I/O` until saned was restarted (F-038, Q-023).
+- Same day: self-recovery (ADR-012). kodak-scand exits 75 after 3 errors in a row and the unit restarts saned, at most once per 10 min. Tested with a wrong device name via a temporary drop-in (F-039); test files removed, services back on the real config and `ready`.
+- Same day: OLED screensaver (owner request). After 30 s of `Ready` with an empty upload queue, kodak-oled shows a starfield with the IP bouncing over it (~10 fps, ≈1.8 % of one core, no I2C errors); any other state brings the status screen back. Config: `oled.screensaver`, `oled.screensaver_after`. Branch pushed to origin.
+- Same day: fan thermostat (owner asked for PWM; the HAT has none, F-040). `kodak_oled.py` now also switches the fan: on ≥ `fan.on_temp` (60 °C), off ≤ `fan.off_temp` (50 °C), on when the service stops. First test showed no effect because the HAT's fan switch was on always-on; owner flipped it, both directions then verified by temperature.
+- Same day: the screensaver now shows a second line with CPU temperature and fan state (e.g. `52°C · fan off`) under the bouncing IP (owner request).
+
+## 2026-10-08: Phase 2 starts on the Pi (owner: "crashes a lot and is costly", go for the native driver)
+- Wrote `tools/usbcap/` (binary usbmon → pcap + decoder, no dependencies) and captured the vendor driver under box64: idle poll, open, empty-feeder scan attempt (`captures/local/`, git-ignored; index in `captures/README.md`). ADR-013.
+- **The protocol is vendor control requests on EP0** (F-041); the idle poll is just GetStatus (F-042).
+- Found the wire-level code in `devicemanager.so` and read its name tables with `tools/re/elftables.py`: 69 request names, 32 interrupt event names, status field names (F-043). Notes in `re/linux-driver/devicemanager.md`; spec in `docs/protocol/commands.md` (new) and `transport.md` (framing section).
+- `tools/kdsprobe/` (ADR-014): first **native arm64 access** to the scanner, read-only `info`/`watch` (F-044). The serial number is readable (request `36`).
+- LCD: decoded LCDPopulate as a 128×48 bitmap (F-046) and uploaded our own bitmap for message type 4 id 1 (`kdsprobe.py lcd`); accepted, panel not looked at.
+- Re-read the 2026-09-28 power-up trace with the request names: Cypress FX2 firmware load + FPGA configuration + banked firmware (F-048).
+- The vendor driver rewrites NVRam and sets the clock on every open (F-047); our code does neither.
+- A 10-minute `kdsprobe.py watch` (scan services stopped) showed no event and no status change; the owner had been asked in chat to press buttons and load paper but did not answer, so most likely nobody was at the scanner. Q-024 stays open.
+- Scan services restarted afterwards; the vendor open re-uploads its own LCD message.
+- Journal on the Pi is volatile (only the current boot), so the owner's "crashes a lot" could not be traced in logs.
+- Later the same day, owner at the scanner: the station did not scan an inserted sheet (stale saned again, F-054); restart fixed it, and the scan was captured in full (`station-scan-1.pcap`): scan sequence F-052, raw RGB image format F-053 (both sides rendered from the wire).
+- `kdsprobe.py watch` now enables events (`3a`): owner pressed ▲, ▼, Start, opened the cover, inserted paper; every action came through as an event and/or status change (F-051). Q-016 and Q-024 closed.
+- Owner: LCD shows only the stock `1` (F-055).
+- Slip: a wait loop with `pgrep -f` matched its own shell and hung, and a `pkill -f` killed the calling shell; the services were down a few minutes longer than planned. Use the task notification, not pgrep loops.
+- **First native scan** with the owner at the scanner (he said go): `native_scan.py`, replay of the captured color 300 duplex start, both sides complete (F-056). Station restarted afterwards.
+- Native 3-sheet scan (owner fed the stack): page trailers decoded, 6 pages split and rendered (F-057). A stray incomplete station upload happened around the first native test (F-058).
+- Image processing for the native path written and checked against the vendor's output of the same sheet (F-059); the processed 3-sheet scan went to Paperless through the station spool. Spec: `docs/protocol/image-processing.md`.
+- Built and installed `kodak-native.service` (ADR-015): Start button + function number → native scan → processing → the station's spool; LCD labels for functions 1–3 uploaded (F-060). Driver modules moved to `pi/scan-station/` (`kds_usb`, `kds_scan`, `kds_image`), scan sequence extracted to `sequences/color300-duplex.json` (`tools/usbcap/extract_sequence.py`). Splitter and gray/lineart output tested offline on the captured streams; the end-to-end test with the Start button needs the owner.
+- First button-triggered native job uploaded (F-061). Mistake on the way: I checked the log 2 s before the owner's press was logged, wrongly concluded events were dead and stopped the service mid-scan (job lost, owner had to rescan). Lesson: when the owner says he pressed, wait for the job to finish (watch the log) before touching the service. Shutdown-hang bug found and fixed through this. LCD label visibility still unanswered by the owner (Q-025).
+- Functions 2 (gray) and 3 (b/w) confirmed with 3-sheet stacks (F-063, F-064); b/w threshold raised. Power cycle: vendor fallback works unattended (F-065); labels are volatile → sent on every connect; power-up capture missed because of a capture-tool bug (fixed).
+- After the power cycle: one Start press was never reported by the scanner after ~35 min idle (F-066, Q-029); the next press 7 min after a service restart scanned and uploaded normally. Event/status logging added to kodak-native.

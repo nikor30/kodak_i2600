@@ -29,3 +29,6 @@ scans/
 pi/phase1/phase1-*/
 pi/phase1/phase1-*.tar.gz
 pi/phase1/*.log
+
+# Raw USB captures (contain vendor firmware and scanned documents)
+captures/local/

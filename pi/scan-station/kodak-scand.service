@@ -11,8 +11,11 @@ Environment=SANE_CONFIG_DIR=/usr/local/lib/kodak-scan/sane.d
 Environment=PYTHONUNBUFFERED=1
 DynamicUser=yes
 StateDirectory=kodak-scan
+RuntimeDirectory=kodak-scan
 LoadCredential=paperless-token:/etc/kodak-scan/paperless-token
 Restart=always
+# Exit 75 = "the scanner keeps failing": restart saned (and through Requires=, this unit), F-038.
+ExecStopPost=+/bin/sh -c '[ "$$EXIT_STATUS" != 75 ] || systemctl --no-block restart kodak-saned.service'
 RestartSec=10
 NoNewPrivileges=yes
 ProtectSystem=strict

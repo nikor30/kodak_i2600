@@ -1,0 +1,20 @@
+[Unit]
+Description=Kodak i2600 scan station: status on the PoE HAT (B) OLED
+Documentation=file:///usr/local/lib/kodak-scan/README.md
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/kodak-scan/kodak_oled.py --config /etc/kodak-scan/config.yaml
+Environment=PYTHONUNBUFFERED=1
+# root: reads kodak-scand's status in /run/private/kodak-scan (DynamicUser runtime dir)
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+DevicePolicy=closed
+DeviceAllow=char-i2c rw
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # Transport layer
 
-Status: **endpoint layout confirmed from real descriptors (2026-09-28). Framing not yet known.**
+Status: **endpoint layout confirmed from real descriptors (2026-09-28); framing known (2026-10-08).**
 Sources: `docs/hardware/hwinfo-20260928/lsusb-v.txt` (owner's unit), `re/linux-driver/inventory.md` (vendor pipe map).
 
 ## Device identity (owner's unit)
@@ -18,8 +18,8 @@ Sources: `docs/hardware/hwinfo-20260928/lsusb-v.txt` (owner's unit), `re/linux-d
 
 | EP address | Type | Max packet | Interval | Vendor pipe (F-014) | Role |
 |---|---|---|---|---|---|
-| `0x02` OUT | Bulk | 512 | – | `OS_USBPIPE_BULKOUT` | Host → device commands/data |
-| `0x82` IN | Bulk | 512 | – | `OS_USBPIPE_IMAGEFRONT` | Front image data (probably also command replies; to confirm) |
+| `0x02` OUT | Bulk | 512 | – | `OS_USBPIPE_BULKOUT` | Bulk downloads only (FPGA configuration at power-up). **Not** used for commands |
+| `0x82` IN | Bulk | 512 | – | `OS_USBPIPE_IMAGEFRONT` | Front image data only (command replies come on EP0) |
 | `0x86` IN | Bulk | 512 | – | `OS_USBPIPE_IMAGEREAR` | Rear image data (duplex) |
 | `0x81` IN | Interrupt | **8** | bInterval 10 → 64 ms | `OS_USBPIPE_BULKINTERRUPT` (flag 20) | Events/status, 8-byte messages |
 | `0x88` IN | Interrupt | **8** | bInterval 10 → 64 ms | `OS_USBPIPE_BULKINTERRUPT` (flag 24) | Events/status, 8-byte messages |
@@ -27,7 +27,14 @@ Sources: `docs/hardware/hwinfo-20260928/lsusb-v.txt` (owner's unit), `re/linux-d
 - Every endpoint in the vendor configuration exists with the expected direction and type. The earlier hypothesis is **confirmed**.
 - Duplex images come on **two separate bulk-IN endpoints**, so there is no need to de-interleave front and back on one stream.
 - Button/panel/paper events are very likely the **8-byte interrupt messages** on EP 0x81/0x88. To be confirmed in Phase 2 by pressing buttons during capture.
-- The control endpoint (EP0) may carry vendor requests too. The driver resolves `openusb_ctrl_xfer`; Phase 2 will show whether it uses it.
+- **All commands are vendor requests on the control endpoint (EP0)**, see `commands.md`.
 
 ## Framing
-Unknown. SCSI CDB framing is unlikely (no SCSI strings in the driver, F-016). To be decided from Phase 2 captures.
+Commands are USB vendor control requests on EP0: `bmRequestType 0x40` (host → device) or `0xC0`
+(device → host), `bRequest` = command code, `wValue`/`wIndex` = arguments, optional data stage.
+There is no SCSI or packet framing on the bulk pipes (captures 2026-10-08: a complete open and
+an empty-feeder scan attempt consist of control transfers only). Details: [`commands.md`](commands.md).
+
+The controller is a **Cypress EZ-USB FX2** (hyp., high confidence: the power-up sequence uses
+the FX2 firmware-load request `0xA0` with the CPUCS register address `0xE600`), with an FPGA
+behind it for the image path.

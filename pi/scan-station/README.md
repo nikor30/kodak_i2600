@@ -16,6 +16,31 @@ feeder ─USB─ Kodak vendor driver (x86_64) under box64, in /opt/kodak-x86
 Everything above saned talks only SANE, so the vendor driver can later be
 replaced by the native backend without touching this service.
 
+## Two stations, one at a time
+| | `kodak-native.service` (native driver) | `kodak-scand` + `kodak-saned` (vendor driver under box64) |
+|---|---|---|
+| Trigger | **Start button**; ▲/▼ pick the profile, the scanner's LCD shows its label | paper in the feeder (2 s poll) |
+| Scan modes | always color 300 dpi duplex; gray, black/white, simplex and blank removal in software | whatever the vendor backend offers |
+| Idle cost | one small Python process, no emulation | saned under box64, polled every 2 s |
+| After a scanner power cycle | runs the vendor driver once (~15 s) to load the firmware, then native | – |
+| Status | new (2026-10-08), color/gray/bw at 300 dpi only | proven, but goes stale after idle time (F-038, F-054) |
+
+Switch: `sudo DRIVER=native ./install.sh` or `sudo ./install.sh` (vendor). Both use the same config,
+spool, uploader and OLED status. They never run together (`Conflicts=`).
+
+### Native station
+```
+Start button ─ interrupt event ─ kodak_native.py              kodak-native.service
+   kds_scan.py   replay sequences/color300-duplex.json, read both image pipes, cut into pages
+   kds_image.py  find sheet, deskew, crop, colour-correct, drop blank sides (worker processes)
+   → spool/work → img2pdf → spool/outbox → the same upload thread as kodak-scand
+```
+- `native.functions` in the config maps LCD function numbers to profiles; a profile's `label:` is the
+  text on the scanner's LCD (uploaded every time the service connects; the scanner forgets it at power-off).
+- `native.trigger: paper` scans as soon as paper is inserted instead of waiting for Start.
+- Start with an empty feeder or an unassigned number shows a short message on the OLED and does nothing.
+- Protocol and processing are described in `docs/protocol/commands.md` and `image-processing.md`.
+
 ## Install
 Prerequisites: `pi/phase1/setup-x86-chroot.sh` and `pi/phase1/setup-box64.sh`.
 
@@ -38,6 +63,29 @@ resolved via `/api/tags/`, so the token's user also needs **view** permission on
 - The title is `Scan <date time>`; the tags come from the active profile.
 - The active profile is `profile:` in the config (`color300`, `gray300`, `bw300`). Restart the service after a change.
 
+## Status display (PoE HAT (B) OLED)
+`kodak-oled.service` drives the HAT's 128×32 SSD1306 display (I2C bus 1, `0x3c`). `install.sh`
+enables I2C if needed.
+
+| line | content |
+|---|---|
+| top | the Pi's IP address, or `no network` |
+| bottom | `Scanner starting…`, `Ready`, `Ready · N to upload`, `Scanning page N` (with a moving bar), the scanner's error text, or `Scan service off` |
+
+After 30 s of `Ready` with nothing to upload, a screensaver takes over (a starfield with the IP,
+CPU temperature and fan state bouncing over it); it ends as soon as a scan starts, an upload is queued, or an error occurs.
+Switch it off with `screensaver: false`.
+
+kodak-scand publishes its state in `/run/kodak-scan/status.json`; the display service only reads
+that file. Settings: the optional `oled:` section in the config (`rotate: 180` if the text is
+upside down, `contrast`, `screensaver`, `screensaver_after`), then `systemctl restart kodak-oled`.
+
+## Fan (PoE HAT (B))
+The HAT's fan can only be switched on or off (one pin of the PCF8574 at `0x20`; no PWM).
+`kodak-oled.service` runs it as a thermostat: on at `fan.on_temp` (60 °C CPU), off at
+`fan.off_temp` (50 °C). The fan is switched on when the service stops, and it stays on if the
+temperature cannot be read. `fan.enabled: false` leaves the fan alone.
+
 ## Spool (`/var/lib/kodak-scan`, i.e. `/var/lib/private/kodak-scan`)
 | dir | content |
 |---|---|
@@ -45,6 +93,11 @@ resolved via `/api/tags/`, so the token's user also needs **view** permission on
 | `outbox/` | PDFs waiting for upload (retried every `retry_interval` s) |
 | `sent/` | uploaded PDFs, deleted after `keep_sent_days` |
 | `failed/` | PDFs Paperless rejected (HTTP 400/413/415); check the log |
+
+## Self-recovery
+After 3 scanner errors in a row kodak-scand exits with status 75 and systemd restarts
+`kodak-saned` (and with it kodak-scand), at most once per 10 minutes. This covers the case where
+the vendor driver inside a long-running saned no longer opens the device (F-038).
 
 ## Limits (for now)
 - The Start button and the LCD function number are not visible through the vendor SANE
