@@ -153,6 +153,8 @@ class Station:
         for n in sorted(self.functions):
             if 1 <= n <= 9:
                 lines.append(f"label {n} {self.label(n).encode('ascii', 'replace').decode()}")
+        # The panel offers 1..N; three is what it has by itself.
+        lines.append(f"functions {min(9, max(3, max(self.functions)))}")
         (d / "dll.conf").write_text(BACKEND + "\n")
         (d / f"{BACKEND}.conf").write_text("\n".join(lines) + "\n")
         os.environ["SANE_CONFIG_DIR"] = str(d)
@@ -175,7 +177,7 @@ class Station:
     def update_display(self, everything=False, clock=True):
         numbers = sorted(self.functions) if everything else [self.function]
         for n in numbers:
-            if not 1 <= n <= 7 or n not in self.functions:
+            if not 1 <= n <= 7:
                 continue
             text = self.display_text(n, clock)
             if self.shown.get(n) != text:

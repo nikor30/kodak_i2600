@@ -117,7 +117,8 @@ struct libusb_device;
 struct kds_dev;
 
 /* powerup_path: PATH.seq of a local power-up file (with PATH.bin beside it), or NULL */
-int kds_open(struct libusb_device *usbdev, const char *powerup_path, struct kds_dev **out);
+/* functions: how many function numbers (1..9) the panel offers; 0 = leave the panel as it is */
+int kds_open(struct libusb_device *usbdev, const char *powerup_path, int functions, struct kds_dev **out);
 void kds_close(struct kds_dev *d);
 void kds_set_spool(struct kds_dev *d, int max_pages_in_memory, const char *dir);
 int kds_panel(struct kds_dev *d, struct kds_panel *p);

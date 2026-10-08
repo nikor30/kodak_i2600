@@ -304,7 +304,7 @@ static void *event_thread(void *arg)
 }
 
 /* ---- open / close ------------------------------------------------------------ */
-int kds_open(struct libusb_device *usbdev, const char *powerup_path, struct kds_dev **out)
+int kds_open(struct libusb_device *usbdev, const char *powerup_path, int functions, struct kds_dev **out)
 {
     struct kds_dev *d = calloc(1, sizeof(*d));
     if (!d)
@@ -352,14 +352,17 @@ int kds_open(struct libusb_device *usbdev, const char *powerup_path, struct kds_
         rc = KDS_E_NO_FIRMWARE;
         goto fail;
     }
-    if (st.button == 0) {
-        /* After the power-up the panel has no function number: blank LCD, Start reports 0.
-         * SetSequenceNumber as the vendor driver sends it on every open: number 1 of 7. */
-        int urc = libusb_control_transfer(d->h, 0x40, REQ_SET_SEQUENCE_NUMBER, 1, 7, NULL, 0, CTRL_TIMEOUT_MS);
+    if (st.button == 0 || functions > 0) {
+        /* SetSequenceNumber (section 7): show number 1; wIndex is a bit mask of the numbers the
+         * arrow buttons offer. After the power-up the panel has none (blank LCD, Start reports
+         * 0); the vendor driver sends 7 (numbers 1-3) on every open. */
+        int count = functions >= 1 && functions <= 9 ? functions : 3;
+        int urc = libusb_control_transfer(d->h, 0x40, REQ_SET_SEQUENCE_NUMBER, 1, (uint16_t)((1 << count) - 1),
+                                          NULL, 0, CTRL_TIMEOUT_MS);
         rc = urc < 0 ? usb_err(urc) : get_status(d, &st);
         if (rc < 0)
             goto fail;
-        kds_dbg(2, "function number set on the panel (now %d)", st.button);
+        kds_dbg(2, "panel offers function numbers 1-%d (now %d)", count, st.button);
     }
     d->tray = st.tray;
     d->interlock = st.interlock;
