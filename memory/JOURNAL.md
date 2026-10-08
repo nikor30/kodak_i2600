@@ -133,3 +133,4 @@
 - First job through kodak-sane (F-084): 6.1 s from Start to the uploaded PDF. (The switch-over was at 15:39, not 15:43 as F-083 says.)
 - Stack through kodak-sane (F-085): 3 sheets in 9.0 s, blank backs dropped.
 - Gray profile via function 2 through kodak-sane (F-086).
+- B/W profile via function 3 through kodak-sane (F-087). All three profiles have now run on the new station.
