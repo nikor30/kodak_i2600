@@ -26,6 +26,7 @@ import re
 import secrets
 import socket
 import string
+import threading
 import urllib.parse
 
 import requests
@@ -56,13 +57,18 @@ class Config:
 
     def __init__(self, path):
         self.path = pathlib.Path(path)
-        self.yaml = YAML()
-        self.yaml.preserve_quotes = True
-        self.yaml.width = 4096
+        self.lock = threading.RLock()       # requests come in on several threads
+
+    @staticmethod
+    def _yaml():
+        yaml = YAML()                       # a parser object must not be shared between threads
+        yaml.preserve_quotes = True
+        yaml.width = 4096
+        return yaml
 
     def load(self):
-        with open(self.path) as f:
-            return self.yaml.load(f) or CommentedMap()
+        with self.lock, open(self.path) as f:
+            return self._yaml().load(f) or CommentedMap()
 
     def token_file(self, doc=None):
         doc = doc if doc is not None else self.load()
@@ -112,6 +118,10 @@ class Config:
 
     def save(self, new):
         """Validate the page's settings and write them into the file. Returns a list of notes."""
+        with self.lock:
+            return self._save(new)
+
+    def _save(self, new):
         doc = self.load()
         url = str((new.get("paperless") or {}).get("url") or "").strip().rstrip("/")
         if url:
@@ -235,7 +245,7 @@ class Config:
         native["functions"] = fmap
 
         buf = io.StringIO()
-        self.yaml.dump(doc, buf)
+        self._yaml().dump(doc, buf)
         backup = self.path.with_name(self.path.name + ".bak-web")
         if not backup.exists():
             backup.write_bytes(self.path.read_bytes())      # the file as it was before the page first changed it
