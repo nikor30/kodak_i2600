@@ -110,6 +110,12 @@ def open_scanner(powerup_file):
             st = dev.status()
             if st["fw_id"] != 3:
                 raise k.UsbError(f"scanner firmware not running (id {st['fw_id']})")
+        if st["button"] == 0:
+            # After the native power-up the panel has no function number (blank LCD, Start reports
+            # function 0). The vendor driver sets it on every open; we do it only when it is missing.
+            dev.set_function_numbers()
+            st = dev.status()
+            log.info("function number set on the panel (now %d)", st["button"])
         dev.start_events()
         return dev, st
     except Exception:

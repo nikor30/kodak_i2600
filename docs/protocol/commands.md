@@ -240,6 +240,11 @@ size as in T).
   device does not answer while a freshly loaded firmware starts).
 - After `17` (calibration capture) both image pipes are read until a short block, data discarded.
 - Start condition: firmware id 1 (boot firmware). End condition: firmware id 3.
+- **After the replay the panel has no function number**: the LCD is blank, GetStatus `bButtonState`
+  is 0 and a Start press arrives as `20 01 00` (scanning works all the same). The vendor driver sends
+  `16` SetSequenceNumber v=1 i=7 half a second after the replayed window; sending exactly that sets
+  `bButtonState` to 1, and the LCD shows the number and its label again, ▲/▼ work (owner, 2026-10-08).
+  A driver sends it when `bButtonState` reads 0.
 
 **Status: run once on the owner's unit (2026-10-08 15:06, F-075):** boot firmware to firmware
 id 3 in 10.1 s, LCD labels accepted right after, station `ready`. A scan after a native
