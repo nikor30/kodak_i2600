@@ -5,6 +5,7 @@ _Last updated: 2026-10-08_
 **Current phase:** Phase 2 (protocol capture) + first native code, running on the Pi itself. The owner asked for the native ARM driver because the box64 station crashes often and is costly; the Phase 5 station (vendor driver under box64) stays in service meanwhile.
 **Known now:** commands are vendor control requests on EP0 (F-041), 69 request names (F-043), status block incl. paper/cover/function number (F-045, F-051), **button and panel events read natively** (F-051), scan start/stop sequence (F-052), **raw RGB image format** (F-053), LCD bitmap upload (F-046), SetTime (F-050), power-up firmware sequence (F-048).
 **First native scan done (F-056):** `tools/kdsprobe/native_scan.py` scans one sheet color 300 dpi duplex by replaying the captured start sequence; raw images only (no crop/deskew), and only on a scanner the vendor driver has initialised since power-up.
+**Image processing done (F-059):** `kds_pages.py` turns the raw streams into cropped, deskewed, colour-corrected pages and a PDF, and can queue it in the station's upload spool.
 **Not known yet:** the mode-dependent setup registers and config fields (Q-026), page ends / stream length (Q-028), LCD function labels (Q-025), power-up init for a native driver (Q-027).
 
 ## Done
@@ -17,7 +18,7 @@ _Last updated: 2026-10-08_
 
 ## Next actions (native driver)
 N1. (multi-sheet done, F-057) Other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
-N2. Image post-processing for the native path: crop to the sheet, deskew, colour/white check against the vendor's output, blank-page detection; then PDF → the existing upload spool.
+N2. (image processing done, F-059) Next: verify the rear side with a double-sided sheet (Q-030); make processing faster (rotation); then one command/daemon that does native scan → process → spool, triggered by the Start button.
 N3. Native panel daemon (quick win for the owner's wish): events → Start button + function number → trigger the existing station profile; replaces the 2 s box64 poll. Needs a design decision with the owner (changes ADR-010; the vendor driver claims the interface while it is open).
 N4. LCD function labels (Q-025): owner's go-ahead needed (persistent write, format only known from vendor code).
 N5. Power-up capture (Q-027): start a capture, owner power-cycles the scanner, restart kodak-saned.
