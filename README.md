@@ -7,7 +7,7 @@ vendor software runs while it scans.
 
 ## Status
 
-Tested on one unit (i2600, firmware 1.2.15) on a Raspberry Pi 4. Experimental.
+Version 1.0. Tested on one unit (i2600, firmware 1.2.15) on a Raspberry Pi 4; see the limitations below.
 
 | | |
 |---|---|
