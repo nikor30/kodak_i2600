@@ -125,3 +125,4 @@
 - Owner allowed `16` SetSequenceNumber 1/7; sent by hand, function number in the status 0 → 1 (F-078). A first attempt as a raw one-off script was blocked by the permission system; it went through the guarded `kds_usb` path instead (request added to the write list with fixed arguments). Not yet built into the power-up.
 - Owner confirmed the display after `16` (F-078, Q-032 closed). kodak-native sends it when `bButtonState` is 0; installed and restarted, automatic path awaits the next power cycle.
 - Third power cycle 15:17: native power-up + automatic SetSequenceNumber (F-079).
+- Owner confirmed the display after the automatic path (F-079). Power-up replay ported to C (F-080), timing facts added to commands.md section 6 first. Device test needs a power cycle with kodak-native stopped.

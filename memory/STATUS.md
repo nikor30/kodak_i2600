@@ -24,7 +24,8 @@ B2. Start-button sensor with the owner at the panel (`scanimage -A` after a pres
 B3. Spool test: `memory-pages 0` and a stack; cancel inside a page (Q-031: does OperationStop stop the feeder?).
 B3b. **Deskew is in (F-073), offline-verified; needs one stack through scanimage on the device** (expect `skew x.xx deg` in the debug log and pages of about 2442 × 3458).
 B3c. **LCD labels are in (F-074), upload accepted; needs the owner's eyes:** with kodak-native stopped, `scanimage -A` using a config with `label` lines, then look at the display and press ▲/▼.
-B4. Then: power-up replay in C (section 6) (the Python replay has passed a real power cycle, F-075; port it once a scan after it is confirmed), `make install`, and a SANE-client station to replace kodak-native.
+B3d. **Power-up replay is in the C backend (F-080), untested on the device.** Test: `systemctl stop kodak-native`, owner power-cycles, then `scanimage -A` with a config containing `powerup /etc/kodak-scan/firmware/powerup.seq` and `SANE_DEBUG_KODAK_I2X00=2` (expect `power-up done in ~10 s, firmware id 3`), scan a sheet, `systemctl start kodak-native`.
+B4. Then: `make install`, and a SANE-client station to replace kodak-native.
 
 ## Next actions (native driver)
 N1. (multi-sheet done, F-057) Other modes: capture gray/bw and 200/600 dpi, simplex with `scanimage` under box64 and diff the register writes + ScannerConfiguration against color 300.
