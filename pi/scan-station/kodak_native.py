@@ -120,8 +120,9 @@ def write_labels(dev, labels, cache_file):
 
 
 class Station:
-    def __init__(self, cfg, spool, status, wake_uploader, pool):
+    def __init__(self, cfg, spool, status, wake_uploader, pool, stop):
         self.cfg, self.spool, self.status, self.wake, self.pool = cfg, spool, status, wake_uploader, pool
+        self.stop = stop
         self.ncfg = {**NATIVE_DEFAULTS, **(cfg.get("native") or {})}
         self.functions = {int(n): (p or cfg["profile"]) for n, p in self.ncfg["functions"].items()}
         for n, p in self.functions.items():
@@ -211,7 +212,7 @@ class Station:
             return self.show_ready()
         t_scan = time.time() - t0
         deadline = time.time() + 600
-        while time.time() < deadline:
+        while time.time() < deadline and not self.stop.is_set():   # on shutdown: keep what is finished
             with lock:
                 if all(v is not None for v in results.values()):
                     break
@@ -253,6 +254,7 @@ class Station:
                 except queue.Empty:
                     ev = None
                 if ev is not None:
+                    log.debug("event %s", ev.hex(" "))
                     if ev[0] == ks.EV_FUNCTION:
                         self.function = ev[2]
                         self.show_ready()
@@ -272,6 +274,12 @@ class Station:
                     st = self.dev.status()
                     if st["fw_id"] != 3:
                         raise k.UsbError("scanner lost its firmware (power cycle?)")
+                    # Cheap insurance: should anything switch the events off (another program
+                    # using the scanner, a scanner-side reset), they come back within 5 s.
+                    self.dev.events_on()
+                    if st["button"] and st["button"] != self.function:
+                        self.function = st["button"]
+                        self.show_ready()
             except k.UsbError as e:
                 log.error("scanner connection lost: %s", e)
                 self.status.set(state="starting", error=None)
@@ -302,7 +310,7 @@ def main():
     wake.set()
     threading.current_thread().name = "scan"
     try:
-        Station(cfg, spool, status, wake, pool).loop(stop)
+        Station(cfg, spool, status, wake, pool, stop).loop(stop)
     finally:
         stop.set()
         wake.set()
