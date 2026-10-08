@@ -10,7 +10,8 @@ and colour correction. The station adds profiles, blank-side removal, PDF, spool
 (shared with kodak_scand.py).
 
 The function number chosen with ▲/▼ selects the profile (`native.functions` in the config);
-a profile's `label:` is shown on the scanner's LCD.
+a profile's `label:` is shown on the scanner's LCD. When the config file or the token file
+changes (kodak_web.py, an editor) the service ends itself while idle and systemd starts it again.
 """
 import argparse
 import concurrent.futures
@@ -91,8 +92,10 @@ def vendor_open():
 
 
 class Station:
-    def __init__(self, cfg, spool, status, wake_uploader, stop):
+    def __init__(self, cfg, spool, status, wake_uploader, stop, watch=()):
         self.cfg, self.spool, self.status, self.wake, self.stop = cfg, spool, status, wake_uploader, stop
+        self.watch = {pathlib.Path(p): self.mtime(p) for p in watch}    # settings files: restart when they change
+        self.next_watch = 0
         self.scfg = {**DEFAULTS, **(cfg.get("native") or {})}
         self.functions = {int(n): (p or cfg["profile"]) for n, p in self.scfg["functions"].items()}
         for n, p in self.functions.items():
@@ -104,6 +107,20 @@ class Station:
         self.sensors = {}
         self.last_vendor_open = 0
         self.write_sane_config()
+
+    @staticmethod
+    def mtime(path):
+        try:
+            return os.stat(path).st_mtime_ns
+        except OSError:
+            return None
+
+    def settings_changed(self):
+        """True when the config file or the token was changed (settings page, editor)."""
+        if time.time() < self.next_watch:
+            return False
+        self.next_watch = time.time() + 2
+        return any(self.mtime(p) != old for p, old in self.watch.items())
 
     # ---- configuration of the backend -------------------------------------------
     def label(self, number):
@@ -285,6 +302,11 @@ class Station:
                 elif inserted and self.scfg["trigger"] == "paper":
                     time.sleep(1.5)          # let the stack settle
                     self.run_scan(self.function)
+                elif self.settings_changed():
+                    # Leave; systemd starts us again with the new settings (and the new token).
+                    log.info("settings changed: restarting")
+                    self.status.set(state="starting", error=None)
+                    stop.set()
                 else:
                     stop.wait(0.2)
             except Exception as e:  # noqa: BLE001 (unplugged, power-cycled, …)
@@ -313,7 +335,8 @@ def main():
     up.start()
     wake.set()
     threading.current_thread().name = "scan"
-    st = Station(cfg, spool, status, wake, stop)
+    st = Station(cfg, spool, status, wake, stop,
+                 watch=(args.config, cfg["paperless"]["token_file"]))
     try:
         st.loop()
     finally:

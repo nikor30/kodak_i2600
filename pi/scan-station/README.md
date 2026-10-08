@@ -39,6 +39,21 @@ It needs `/etc/kodak-scan/firmware/powerup.seq` to survive a scanner power cycle
 installer converts an existing `powerup.json`); without it the vendor driver is run once instead.
 Back to the Python driver: `sudo DRIVER=native ./install.sh`.
 
+### Settings page (`kodak-web.service`, port 2600)
+`http://<address of the Pi>:2600/`, user `admin`, password in `/etc/kodak-scan/web-password` (made at the
+first start; change it by editing that file and `systemctl restart kodak-web`).
+- **Station**: what the station is doing, what is selected on the scanner, the last scans and whether they are uploaded.
+- **Paperless-ngx**: address and API token, with a connection test. The token is written to
+  `/etc/kodak-scan/paperless-token` (mode 600) and never sent back to the browser.
+- **Buttons**: which profile is on function numbers 1–7, and whether a scan starts on Start or when paper is inserted.
+- **Profiles**: name, text on the scanner's display, colour mode, both sides, blank sides, JPEG quality or
+  black/white threshold, document title and tags.
+
+Saving rewrites `/etc/kodak-scan/config.yaml` (comments are kept; the file from before the first change is
+`config.yaml.bak-web`). `kodak-sane` notices the change and restarts itself when idle (about 6 s); the other
+two stations need `systemctl restart`. Settings in the `web:` section of the config: `port` (2600), `bind`
+(`0.0.0.0`), `auth` (`true`). The page is plain HTTP with one password: for a home network, not the internet.
+
 ### Native power-up (optional)
 After power-on the scanner has only a boot firmware; the host must load the rest. The native
 service can replay the vendor driver's own initialisation from a file you make locally once:

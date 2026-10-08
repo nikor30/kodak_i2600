@@ -28,6 +28,11 @@ profiles:
     sane: {mode: Lineart, resolution: 300, duplex: both, blankimagemode: content, blankimagecontent: 1}
     title: "Scan {created:%Y-%m-%d %H:%M}"
 
+# web:                                  # settings page (kodak-web.service)
+#   port: 2600
+#   bind: 0.0.0.0                        # 127.0.0.1 = only from the Pi itself
+#   auth: true                           # password in /etc/kodak-scan/web-password, user admin
+
 paperless:
   url: http://paperless.example:8000     # base URL, without /api
   timeout: 300                           # seconds per upload

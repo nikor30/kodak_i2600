@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kodak i2600 scan station</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1c2330; --muted: #5f6b7a; --line: #d9dee5;
+    --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --field: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161c; --card: #1b212a; --text: #e6eaf0; --muted: #9aa6b5; --line: #323b48;
+      --accent: #4c8dff; --accent-text: #0b1220; --ok: #56d364; --warn: #e3b341; --bad: #ff7b72; --field: #12161c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 16px 16px 110px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0 16px; }
+  h1 { font-size: 22px; margin: 0; flex: 1 1 auto; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=password], input[type=number], input[type=url], select {
+    width: 100%; padding: 8px 10px; font: inherit; color: var(--text); background: var(--field);
+    border: 1px solid var(--line); border-radius: 6px; min-height: 38px;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .check { display: flex; align-items: center; gap: 8px; min-height: 38px; color: var(--text); font-size: 15px; margin: 0; }
+  .check input { width: 18px; height: 18px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; min-height: 38px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .55; cursor: default; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--line); white-space: nowrap; }
+  .pill.ok { color: var(--ok); border-color: var(--ok); } .pill.warn { color: var(--warn); border-color: var(--warn); } .pill.bad { color: var(--bad); border-color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 13px; color: var(--muted); font-weight: 500; border-top: 0; }
+  td.num { width: 3.5em; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; }
+  .profile { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 12px; }
+  .profile .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .profile .head strong { overflow-wrap: anywhere; }
+  .msg { font-size: 14px; } .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); }
+  footer .row { max-width: 860px; margin: 0 auto; padding: 12px 16px; }
+  footer .msg { flex: 1 1 200px; }
+  .small { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Kodak i2600 scan station</h1>
+    <span id="state" class="pill">…</span>
+  </header>
+
+  <section>
+    <h2>Station</h2>
+    <p class="hint" id="state-detail">Loading…</p>
+    <div class="scroll"><table id="jobs" hidden>
+      <thead><tr><th>Last scans</th><th>Pages</th><th>Paperless</th></tr></thead><tbody></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Paperless-ngx</h2>
+    <p class="hint">Where the scans are uploaded. The token is stored on the scan station and never shown again.</p>
+    <div class="grid">
+      <div><label for="pl-url">Address</label><input id="pl-url" type="url" placeholder="http://192.168.1.10:8000" autocomplete="off" spellcheck="false"></div>
+      <div><label for="pl-token">API token</label><input id="pl-token" type="password" autocomplete="new-password" spellcheck="false"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" id="pl-test">Test connection</button>
+      <span id="pl-result" class="msg" role="status"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Buttons</h2>
+    <p class="hint">The arrow buttons on the scanner choose a function number; Start scans with the profile set here. The display shows the profile's text next to the number.</p>
+    <div class="grid" style="margin-bottom:8px">
+      <div><label for="trigger">A scan starts</label>
+        <select id="trigger"><option value="button">when Start is pressed</option><option value="paper">as soon as paper is inserted</option></select></div>
+    </div>
+    <div class="scroll"><table id="functions">
+      <thead><tr><th>Number</th><th>Profile</th><th>Text on the display</th></tr></thead><tbody></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Profiles</h2>
+    <p class="hint">A profile says how a stack is scanned and filed. The display text is shown on the scanner (plain letters and digits; up to about 30 characters appear large).</p>
+    <div id="profiles"></div>
+    <div class="row" style="margin-top:12px"><button type="button" id="add-profile">Add profile</button></div>
+  </section>
+
+  <p class="small">Changes take effect when saved: the station restarts with the new settings (about 15 seconds). A copy of the configuration from before the first change is kept as <code>config.yaml.bak-web</code>.</p>
+</main>
+<footer><div class="row">
+  <span id="save-msg" class="msg" role="status"></span>
+  <button type="button" id="reload">Discard changes</button>
+  <button type="button" id="save" class="primary">Save</button>
+</div></footer>
+<script src="/app.js"></script>
+</body>
+</html>

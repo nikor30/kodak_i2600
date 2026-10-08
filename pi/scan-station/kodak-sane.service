@@ -19,7 +19,8 @@ Restart=always
 # SIGTERM goes to the main process only, so a running job can finish its pages.
 KillMode=mixed
 TimeoutStopSec=45
-RestartSec=10
+# Also the way new settings are taken up: the service ends itself when the config changes.
+RestartSec=5
 ProtectHome=yes
 
 [Install]
