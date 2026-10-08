@@ -132,3 +132,4 @@
 - Owner: use our own native driver for the station. Wrote `kodak_sane.py` + `kodak-sane.service` (ADR-018), `DRIVER=sane` in install.sh, GetStatus rate limit in the backend's sensor reads; installed and switched over at 15:43 (F-083). Test job with the owner is next.
 - First job through kodak-sane (F-084): 6.1 s from Start to the uploaded PDF. (The switch-over was at 15:39, not 15:43 as F-083 says.)
 - Stack through kodak-sane (F-085): 3 sheets in 9.0 s, blank backs dropped.
+- Gray profile via function 2 through kodak-sane (F-086).
