@@ -134,3 +134,4 @@
 - Stack through kodak-sane (F-085): 3 sheets in 9.0 s, blank backs dropped.
 - Gray profile via function 2 through kodak-sane (F-086).
 - B/W profile via function 3 through kodak-sane (F-087). All three profiles have now run on the new station.
+- Power cycle under kodak-sane (F-088): backend power-up 9.9 s, ready after 23 s.
