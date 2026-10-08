@@ -5,7 +5,8 @@ only. No vendor code, no emulation.
 
 **State (2026-10-08): first version.** Built and tested offline against saved image streams;
 on the scanner, detection, open, options, the empty-feeder case and **color duplex scans of one sheet and of a 3-sheet stack**
-are tested. Gray/Lineart on the device, spooling to disk and cancelling are not.
+are tested, also in Gray and with all pages spooled to disk. Lineart and front-only on the
+device, cancelling and the Start-button sensor are not.
 
 ## What it does
 - Finds the scanner, opens it, reads the panel: `--scan` (Start button pressed),
