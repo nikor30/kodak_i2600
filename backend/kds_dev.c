@@ -29,6 +29,7 @@
 #define REQ_SET_TIME 0x1f
 #define REQ_START_CAPTURE 0x17
 #define REQ_VRAM 0x37
+#define REQ_SET_POWER 0x39      /* wValue 2: leave standby */
 #define REQ_EVENT_CONTROL 0x3a
 #define REQ_BATCH_DATA 0x45
 #define REQ_LCD_POPULATE 0x62
@@ -960,28 +961,40 @@ int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex)
     if (d->dead)
         return KDS_E_IO;
     int rc = get_status(d, &st);
-    /* A Start press wakes the scanner from standby (hypothesis); until it is awake the
-     * interlock byte says nothing. We do not know a request that wakes it, so only wait. */
-    for (int i = 0; rc == KDS_OK && st.power == PWR_STANDBY && i < 25; i++) {
-        pause_s(0.2);
-        rc = get_status(d, &st);
+    /* The scanner reports a Start press in standby but stays asleep, and its interlock and
+     * tray bytes say nothing meanwhile (section 3). Wake it as the vendor driver does on open. */
+    if (rc == KDS_OK && st.power == PWR_STANDBY) {
+        double t0 = now();
+        kds_dbg(1, "scanner is in standby: waking it");
+        rc = ctl_out(d, REQ_SET_POWER, 2, 0, NULL, 0);
+        for (int i = 0; rc == KDS_OK && i < 25; i++) {
+            pause_s(0.2);
+            rc = get_status(d, &st);
+            if (rc != KDS_OK || st.power != PWR_STANDBY)
+                break;
+        }
+        if (rc == KDS_OK && st.power != PWR_STANDBY) {
+            kds_dbg(1, "awake after %.1f s: power %d, tray %d, interlock %d", now() - t0, st.power, st.tray, st.interlock);
+            pause_s(1.0);       /* let the paper sensor settle */
+            rc = get_status(d, &st);
+        }
     }
-    if (rc < 0)
+    if (rc == KDS_OK) {
+        if (st.power == PWR_STANDBY) {
+            kds_dbg(1, "scanner is in standby and did not wake up");
+            rc = KDS_E_SCANNER;
+        } else if (st.interlock != 1)
+            rc = KDS_E_COVER;
+        else if (st.fw_id != 3)
+            rc = KDS_E_NO_FIRMWARE;
+        else if (st.error) {
+            kds_dbg(1, "scanner reports error code %d", st.error);
+            rc = KDS_E_SCANNER;
+        } else if (st.tray != 2)
+            rc = KDS_E_NO_DOCS;
+    }
+    if (rc != KDS_OK)
         return rc;
-    if (st.power == PWR_STANDBY) {
-        kds_dbg(1, "scanner is in standby and did not wake up");
-        return KDS_E_SCANNER;
-    }
-    if (st.interlock != 1)
-        return KDS_E_COVER;
-    if (st.fw_id != 3)
-        return KDS_E_NO_FIRMWARE;
-    if (st.error) {
-        kds_dbg(1, "scanner reports error code %d", st.error);
-        return KDS_E_SCANNER;
-    }
-    if (st.tray != 2)
-        return KDS_E_NO_DOCS;
 
     pthread_mutex_lock(&d->lock);
     d->active = 1;
