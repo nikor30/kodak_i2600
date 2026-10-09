@@ -160,7 +160,8 @@ tray byte is not to be trusted either. **Wake-up: `39` SetPower v=2** (C: `vendo
 sleeping scanner: four GetStatus, `40 39 v=0002`, GetStatus still power 1 after 1 ms, awake in the next one 250 ms
 later, then the normal open). After the wake-up VRam `37` reads `01aa0000 ffff0000 … ffff …`, the same content as
 after a power-up (section 6), not the values of a running session. A driver should check bPowerState before a scan
-start, send `39` v=2, wait for power ≠ 1 and only then look at interlock and tray.
+start, send `39` v=2, wait for power ≠ 1 and only then look at interlock and tray. The backend also sends `39` v=2
+when a Tray State event `13 00 02` arrives in standby, so that loading paper wakes the scanner.
 
 ## 4. Interrupt events (EP `0x81`, `0x88`)
 

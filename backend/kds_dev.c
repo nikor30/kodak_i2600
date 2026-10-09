@@ -81,6 +81,7 @@ struct kds_dev {
     /* panel, from events and GetStatus */
     int start_pressed, function, tray, interlock, power, quiet;
     int woke;               /* left standby: read the status once, even when quiet */
+    int wake_wanted;        /* paper was loaded in standby: wake the scanner on the next sensor read */
 
     /* batch */
     int active;             /* a batch exists (supervisor thread to join) */
@@ -254,6 +255,8 @@ static void handle_event(struct kds_dev *d, const uint8_t *ev)
         break;
     case EV_TRAY:
         d->tray = ev[2];
+        if (ev[2] == 2 && d->power == PWR_STANDBY)
+            d->wake_wanted = 1;
         break;
     case EV_INTERLOCK:
         d->interlock = ev[2];
@@ -312,6 +315,23 @@ static void *event_thread(void *arg)
 }
 
 /* ---- open / close ------------------------------------------------------------ */
+/* Leave standby as the vendor driver does on open (section 3); st is the status afterwards. */
+static int wake(struct kds_dev *d, struct status *st)
+{
+    double t0 = now();
+    kds_dbg(1, "scanner is in standby: waking it");
+    int rc = ctl_out(d, REQ_SET_POWER, 2, 0, NULL, 0);
+    for (int i = 0; rc == KDS_OK && i < 25; i++) {
+        pause_s(0.2);
+        rc = get_status(d, st);
+        if (rc != KDS_OK || st->power != PWR_STANDBY)
+            break;
+    }
+    if (rc == KDS_OK && st->power != PWR_STANDBY)
+        kds_dbg(1, "awake after %.1f s: power %d, tray %d, interlock %d", now() - t0, st->power, st->tray, st->interlock);
+    return rc;
+}
+
 int kds_open(struct libusb_device *usbdev, const char *powerup_path, int functions, struct kds_dev **out)
 {
     struct kds_dev *d = calloc(1, sizeof(*d));
@@ -429,9 +449,14 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
      * 2 s (the vendor's idle poll rate): frontends poll the sensors far more often, and
      * button, paper and cover changes arrive as events in between anyway. */
     int idle = !d->active && !d->dead && (d->woke || (!d->quiet && now() - d->status_at >= 2.0));
+    /* Paper loaded into a sleeping scanner: the scanner reports it but stays asleep. */
+    int wake_now = d->wake_wanted && !d->active && !d->dead && d->power == PWR_STANDBY;
+    d->wake_wanted = 0;
     pthread_mutex_unlock(&d->lock);
     struct status st = { 0 };
-    if (idle)
+    if (wake_now)
+        idle = (rc = wake(d, &st)) == KDS_OK;
+    else if (idle)
         rc = get_status(d, &st);
     pthread_mutex_lock(&d->lock);
     if (idle && rc == KDS_OK) {
@@ -964,17 +989,8 @@ int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex)
     /* The scanner reports a Start press in standby but stays asleep, and its interlock and
      * tray bytes say nothing meanwhile (section 3). Wake it as the vendor driver does on open. */
     if (rc == KDS_OK && st.power == PWR_STANDBY) {
-        double t0 = now();
-        kds_dbg(1, "scanner is in standby: waking it");
-        rc = ctl_out(d, REQ_SET_POWER, 2, 0, NULL, 0);
-        for (int i = 0; rc == KDS_OK && i < 25; i++) {
-            pause_s(0.2);
-            rc = get_status(d, &st);
-            if (rc != KDS_OK || st.power != PWR_STANDBY)
-                break;
-        }
+        rc = wake(d, &st);
         if (rc == KDS_OK && st.power != PWR_STANDBY) {
-            kds_dbg(1, "awake after %.1f s: power %d, tray %d, interlock %d", now() - t0, st.power, st.tray, st.interlock);
             pause_s(1.0);       /* let the paper sensor settle */
             rc = get_status(d, &st);
         }
