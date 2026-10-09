@@ -33,6 +33,7 @@
 #define REQ_BATCH_DATA 0x45
 #define REQ_LCD_POPULATE 0x62
 
+#define PWR_STANDBY 1           /* bPowerState / Power State event; 3 = idle, 4 = operating */
 #define EV_END_OF_OPERATION 0x01
 #define EV_POWER 0x10
 #define EV_TRAY 0x13
@@ -78,6 +79,7 @@ struct kds_dev {
 
     /* panel, from events and GetStatus */
     int start_pressed, function, tray, interlock, power, quiet;
+    int woke;               /* left standby: read the status once, even when quiet */
 
     /* batch */
     int active;             /* a batch exists (supervisor thread to join) */
@@ -197,7 +199,7 @@ static int ctl_in(struct kds_dev *d, uint8_t req, uint16_t val, uint16_t idx, ui
 
 /* ---- GetStatus (section 3) --------------------------------------------------- */
 struct status {
-    int fw_id, tray, interlock, button, error;
+    int fw_id, power, tray, interlock, button, error;
 };
 
 static int get_status(struct kds_dev *d, struct status *st)
@@ -209,6 +211,7 @@ static int get_status(struct kds_dev *d, struct status *st)
     if (n < 28)
         return KDS_E_IO;
     st->fw_id = b[0];
+    st->power = b[12];
     st->tray = b[15];
     st->interlock = b[19];
     st->button = b[20];
@@ -234,9 +237,11 @@ static void handle_event(struct kds_dev *d, const uint8_t *ev)
     d->last_event = now();
     d->batch_events++;
     switch (ev[0]) {
-    case EV_POWER:              /* 3 = idle, 4 = operating; anything else is news (standby?) */
+    case EV_POWER:              /* 1 = standby, 3 = idle, 4 = operating */
         if (ev[2] != d->power && ((ev[2] != 3 && ev[2] != 4) || (d->power != 3 && d->power != 4 && d->power != 0)))
             kds_dbg(1, "power state %d -> %d", d->power, ev[2]);
+        if (d->power == PWR_STANDBY && ev[2] != PWR_STANDBY)
+            d->woke = 1;
         d->power = ev[2];
         break;
     case EV_BUTTON:
@@ -336,8 +341,8 @@ int kds_open(struct libusb_device *usbdev, const char *powerup_path, int functio
     rc = get_status(d, &st);
     if (rc < 0)
         goto fail;
-    kds_dbg(2, "status: firmware id %d, tray %d, interlock %d, function %d, error %d",
-            st.fw_id, st.tray, st.interlock, st.button, st.error);
+    kds_dbg(2, "status: firmware id %d, power %d, tray %d, interlock %d, function %d, error %d",
+            st.fw_id, st.power, st.tray, st.interlock, st.button, st.error);
     if (st.fw_id == 1 && powerup_path && *powerup_path) {   /* boot firmware after power-on */
         double t0 = now();
         kds_dbg(1, "scanner was power-cycled: loading its firmware from %s", powerup_path);
@@ -366,6 +371,7 @@ int kds_open(struct libusb_device *usbdev, const char *powerup_path, int functio
             goto fail;
         kds_dbg(2, "panel offers function numbers 1-%d (now %d)", count, st.button);
     }
+    d->power = st.power;
     d->tray = st.tray;
     d->interlock = st.interlock;
     d->function = st.button ? st.button : 1;
@@ -421,7 +427,7 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
     /* No control requests while a batch runs (section 8). Otherwise GetStatus at most every
      * 2 s (the vendor's idle poll rate): frontends poll the sensors far more often, and
      * button, paper and cover changes arrive as events in between anyway. */
-    int idle = !d->active && !d->dead && !d->quiet && now() - d->status_at >= 2.0;
+    int idle = !d->active && !d->dead && (d->woke || (!d->quiet && now() - d->status_at >= 2.0));
     pthread_mutex_unlock(&d->lock);
     struct status st = { 0 };
     if (idle)
@@ -429,6 +435,8 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
     pthread_mutex_lock(&d->lock);
     if (idle && rc == KDS_OK) {
         d->status_at = now();
+        d->woke = 0;
+        d->power = st.power;
         d->tray = st.tray;
         d->interlock = st.interlock;
         if (st.button)
@@ -438,7 +446,8 @@ int kds_panel(struct kds_dev *d, struct kds_panel *p)
     d->start_pressed = 0;
     p->function = d->function;
     p->paper = d->tray == 2;
-    p->cover_open = d->interlock == 2;
+    /* In standby the scanner reports interlock 2 with the cover closed (section 3). */
+    p->cover_open = d->interlock == 2 && d->power != PWR_STANDBY;
     if (d->dead)
         rc = KDS_E_IO;
     pthread_mutex_unlock(&d->lock);
@@ -951,8 +960,18 @@ int kds_batch_start(struct kds_dev *d, const struct kds_seq *seq, int duplex)
     if (d->dead)
         return KDS_E_IO;
     int rc = get_status(d, &st);
+    /* A Start press wakes the scanner from standby (hypothesis); until it is awake the
+     * interlock byte says nothing. We do not know a request that wakes it, so only wait. */
+    for (int i = 0; rc == KDS_OK && st.power == PWR_STANDBY && i < 25; i++) {
+        pause_s(0.2);
+        rc = get_status(d, &st);
+    }
     if (rc < 0)
         return rc;
+    if (st.power == PWR_STANDBY) {
+        kds_dbg(1, "scanner is in standby and did not wake up");
+        return KDS_E_SCANNER;
+    }
     if (st.interlock != 1)
         return KDS_E_COVER;
     if (st.fw_id != 3)

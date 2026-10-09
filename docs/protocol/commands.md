@@ -130,13 +130,13 @@ Example (idle, feeder empty, LCD showing `1`):
 | 5 | 1 | bBoardType | `00` | |
 | 6 | 2 | (not named) | `05 00` | `00 00` before the power-up downloads (T) |
 | 8 | 4 | dwTick | – | u32 LE, 1 ms per count (C: +2010 per 2.01 s) |
-| 12 | 1 | bPowerState | `03` | |
+| 12 | 1 | bPowerState | `03` | **`01` = standby** (S), `03` = idle, `04` = operating (C) |
 | 13 | 1 | bBufferState | `01` | |
 | 14 | 1 | bTransportState | `00` | |
 | 15 | 1 | bTrayState | `01` | **`01` = feeder empty, `02` = paper in the feeder** (W, P) |
-| 16 | 1 | bUddsState | `02` | `01` while the cover is open (W) |
+| 16 | 1 | bUddsState | `02` | `01` while the cover is open (W) and in standby (S) |
 | 17 | 2 | wLampState | `00 00` | |
-| 19 | 1 | bInterlockState | `01` | **`01` = cover closed, `02` = open** (W) |
+| 19 | 1 | bInterlockState | `01` | **`01` = cover closed, `02` = open** (W). **In standby it reads `02` with the cover closed** (S): only valid while bPowerState is not `01` |
 | 20 | 1 | bButtonState | `01` | **the function number shown on the LCD** (W: ▲ → 2, ▼ → 1) |
 | 21 | 1 | bPrintHeadState | `00` | |
 | 22 | 1 | bPrinterState | `00` | |
@@ -148,6 +148,12 @@ Example (idle, feeder empty, LCD showing `1`):
 | 28 | 4 | – | `00` | byte 28 read `02` in one poll right after ▲ (W); meaning open |
 
 Tray, interlock and button offsets are confirmed by observed changes; the others are still a fit.
+
+`S`: standby, seen on the owner's unit 2026-10-08/09 (F-095). The scanner went to standby by itself 29 min after
+the last scan with events `15 00 00`, `10 00 01`, `16 00 02` in the same second. 15 hours later GetStatus still read
+`03 00 01 02 0f 00 05 00 … 01 01 00 01 01 00 00 02 01 00 00 01 01 00 ff 00` (power 1, udds 1, interlock 2).
+GetStatus every 2 s, LCDPopulate label uploads and InterruptEventControl do not wake it. What wakes it and which
+events it sends then is not seen yet (Q-033).
 
 ## 4. Interrupt events (EP `0x81`, `0x88`)
 
@@ -165,6 +171,7 @@ Observed (C = during the scan, W = owner at the panel):
 | `16 00 02` / `16 00 01` | Interlock State: cover opened / closed (W) |
 | `03 00 01`, `03 00 02` | Ding, after request `1b` Ring (C) |
 | `10 00 04` / `10 00 03` | Power State: 4 while an operation runs, 3 when idle (C) |
+| `10 00 01` | Power State 1: the scanner enters standby; followed at once by `16 00 02` although the cover is closed (S, section 3) |
 | `02 00 00` | Start of Operation (C) |
 | `12 00 01`, `12 00 02`, `12 00 00` | Transport State: starting, running, stopped (C; names hyp.) |
 | `42 00 00 00 nn` | Imaging Complete, `nn` = image count so far (C: 1 after the pre-scan capture, 2 after the sheet) |
