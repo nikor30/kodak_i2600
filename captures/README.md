@@ -11,6 +11,7 @@ decoded facts (`docs/protocol/`) are committed.
 |---|---|---|---|
 | `idle-poll-10s.pcap` | 2026-10-08 | vendor v4.14, box64, via kodak-scand | 10 s of the 2 s paper poll, feeder empty |
 | `open-A.pcap` | 2026-10-08 | vendor, `scanimage -A` | open + close of an initialised scanner |
+| `vendor-open-standby.pcap` | 2026-10-09 | vendor, `scanimage -A` | open of a scanner in standby (power state 1): `39` SetPower v=2 wakes it (F-096) |
 | `scan-empty-gray200.pcap` | 2026-10-08 | vendor, `scanimage --mode Gray --resolution 200` | scan attempt, feeder empty → "out of documents" |
 | `station-scan-1.pcap` | 2026-10-08 | vendor, via kodak-scand | recovery from a stale saned, then one A4 sheet color 300 dpi duplex (53 MB of image data; contains the scanned sheet) |
 | `power-up-1.pcap` | 2026-10-08 | vendor, run by kodak-native's fallback | power-up open after a power cycle, full payloads (**contains the vendor firmware**); source of the local `powerup.json`/`.bin` (F-067) |
