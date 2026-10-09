@@ -54,7 +54,7 @@
 #define KODAK_EPOCH 978307200L       /* 2001-01-01 00:00:00 UTC, for SetTime */
 
 /* The only requests this driver sends (section 8, "Replay rules"), besides LCDPopulate
- * for function labels in kds_lcd_label(). */
+ * for function labels in kds_lcd_label() and SetPower in wake(). */
 static const uint8_t OUT_ALLOWED[] = { 0x3a, 0x1b, 0x32, 0x31, 0x11, 0x45, 0x37, 0xa3, 0xe0, 0x30, 0x10, 0x17 };
 static const uint8_t IN_ALLOWED[] = { 0x00, 0x32, 0x35, 0x37, 0xa3, 0xe0 };
 /* Requests of the power-up replay (section 6). All of it is volatile: firmware and FPGA
@@ -315,12 +315,18 @@ static void *event_thread(void *arg)
 }
 
 /* ---- open / close ------------------------------------------------------------ */
-/* Leave standby as the vendor driver does on open (section 3); st is the status afterwards. */
+/* Leave standby as the vendor driver does on open (section 3); st is the status afterwards.
+ * The only use of request 39 in this driver; it is not allowed in a scan sequence. */
 static int wake(struct kds_dev *d, struct status *st)
 {
     double t0 = now();
     kds_dbg(1, "scanner is in standby: waking it");
-    int rc = ctl_out(d, REQ_SET_POWER, 2, 0, NULL, 0);
+    int rc = libusb_control_transfer(d->h, 0x40, REQ_SET_POWER, 2, 0, NULL, 0, CTRL_TIMEOUT_MS);
+    if (rc < 0) {
+        kds_dbg(1, "set power 2: %s", libusb_error_name(rc));
+        return usb_err(rc);
+    }
+    rc = KDS_OK;
     for (int i = 0; rc == KDS_OK && i < 25; i++) {
         pause_s(0.2);
         rc = get_status(d, st);
